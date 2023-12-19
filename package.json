@@ -1,5 +1,5 @@
 {
-  "name": "vyckr-tachyon",
+  "name": "takeeon",
   "devDependencies": {
     "@types/node": "^16",
     "bun-types": "^1.0.1"
