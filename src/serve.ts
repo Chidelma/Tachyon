@@ -46,11 +46,11 @@ export function SERVE(target: Function) {
         // @ts-ignore
         const controller = new target().constructor
     
-        if(controller[func] === undefined) throw new Error(`${func} route does not exist in ${file} controller`, { cause: 404 })
+        if(controller[func] === undefined) throw new Error(`${func} route does not exist in ${file} controller`, { cause: 501 })
     
         const route = controller[func]
 
-        const contentType = req.headers.get('content-type')
+        const contentType = req.headers.get('Content-Type')
 
         let data = undefined
 
@@ -74,7 +74,7 @@ export function SERVE(target: Function) {
     
     }, error(req) {
 
-        Logger.ERROR(`http://${host}:${port} - ${ req.cause ?? 500 } ${Date.now() - startTime}ms - ${req.message.length} bytes`)
+        Logger.ERROR(`http://${host} - ${ req.cause ?? 500 } - ${Date.now() - startTime}ms - ${req.message.length} bytes`)
     
         return Response.json({ detail: req.message }, { status: req.cause as number ?? 500 })
     
