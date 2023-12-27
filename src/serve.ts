@@ -33,52 +33,47 @@ async function transformRequest(req: Request, contentType: string) {
     return await req.blob() 
 }
 
-export function SERVE(target: Function) {
+export const server = Bun.serve({ async fetch(req: Request) {
 
-    const server = Bun.serve({async fetch(req: Request) {
+    const url = new URL(req.url)
 
-        const url = new URL(req.url)
+    host = url.host, port = url.port
 
-        host = url.host, port = url.port
+    const [file, func] = url.pathname.split('/').slice(1, 3)
+
+    // @ts-ignore
+    const controller = new target().constructor
+
+    if(controller[func] === undefined) throw new Error(`${func} route does not exist in ${file} controller`, { cause: 501 })
+
+    const route = controller[func]
+
+    const contentType = req.headers.get('Content-Type')
+
+    let data = undefined
+
+    const paths = new URL(req.url).pathname.split('/').slice(3)
+
+    startTime = Date.now()
+
+    if(contentType) {
     
-        const [file, func] = url.pathname.split('/').slice(1, 3)
+        data = await route(await transformRequest(req, contentType), req.headers)
+
+    } else if(paths.length > 0) {
+
+        data = await route(...parsePaths(paths), req.headers)
+
+    } else data = await route(req.headers)
+
+    Logger.INFO(`http://${host}:${port} - "${req.method} ${url.pathname} ${url.protocol}" 200 OK - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} bytes`)
     
-        // @ts-ignore
-        const controller = new target().constructor
-    
-        if(controller[func] === undefined) throw new Error(`${func} route does not exist in ${file} controller`, { cause: 501 })
-    
-        const route = controller[func]
+    return typeof data === 'object' ? Response.json(data, { status: 200 }) : new Response(data, { status: 200 })
 
-        const contentType = req.headers.get('Content-Type')
+}, error(req) {
 
-        let data = undefined
+    Logger.ERROR(`http://${host} - ${ req.cause ?? 500 } - ${Date.now() - startTime}ms - ${req.message.length} bytes`)
 
-        const paths = new URL(req.url).pathname.split('/').slice(3)
+    return Response.json({ detail: req.message }, { status: req.cause as number ?? 500 })
 
-        startTime = Date.now()
-
-        if(contentType) {
-        
-            data = await route(await transformRequest(req, contentType), req.headers)
-
-        } else if(paths.length > 0) {
-
-            data = await route(...parsePaths(paths), req.headers)
-
-        } else data = await route(req.headers)
-    
-        Logger.INFO(`http://${host}:${port} - "${req.method} ${url.pathname} ${url.protocol}" 200 OK - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} bytes`)
-        
-        return typeof data === 'object' ? Response.json(data, { status: 200 }) : new Response(data, { status: 200 })
-    
-    }, error(req) {
-
-        Logger.ERROR(`http://${host} - ${ req.cause ?? 500 } - ${Date.now() - startTime}ms - ${req.message.length} bytes`)
-    
-        return Response.json({ detail: req.message }, { status: req.cause as number ?? 500 })
-    
-    }, port: 8000 })
-
-    Logger.INFO(`Server is running on http://${server.hostname}:${server.port} (Press CLTRL+C to quit)`)
-}
+}})
