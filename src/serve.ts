@@ -1,7 +1,5 @@
 import { Logger } from './logger'
 
-let host: string, port: string, startTime: number
-
 function parsePaths(paths: string[]) {
 
     const parsedValues: any[] = []
@@ -33,15 +31,13 @@ async function transformRequest(req: Request, contentType: string) {
     return await req.blob() 
 }
 
-export function SERVE() {
+export function SERVE({ port, headers }: { port?: number, headers?: Headers } = { port: 8000 }) {
 
     return function(target: Function) {
 
         const server = Bun.serve({async fetch(req: Request) {
 
             const url = new URL(req.url)
-    
-            host = url.host, port = url.port
         
             const [file, func] = url.pathname.split('/').slice(1, 3)
         
@@ -52,13 +48,13 @@ export function SERVE() {
         
             const route = controller[func]
     
-            const contentType = req.headers.get('content-type')
+            const contentType = req.headers.get('Content-Type')
     
             let data = undefined
     
             const paths = new URL(req.url).pathname.split('/').slice(3)
     
-            startTime = Date.now()
+            const startTime = Date.now()
     
             if(contentType) {
             
@@ -70,17 +66,17 @@ export function SERVE() {
     
             } else data = await route(req.headers)
         
-            Logger.INFO(`http://${host}:${port} - "${req.method} ${url.pathname} ${url.protocol}" 200 OK - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} bytes`)
+            Logger.INFO(`http://${url.host}:${port} - "${req.method} ${url.pathname} ${url.protocol}" 200 OK - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} bytes`)
             
-            return typeof data === 'object' ? Response.json(data, { status: 200 }) : new Response(data, { status: 200 })
+            return typeof data === 'object' ? Response.json(data, { status: 200, headers }) : new Response(data, { status: 200, headers })
         
         }, error(req) {
     
-            Logger.ERROR(`http://${host}:${port} - ${ req.cause ?? 500 } ${Date.now() - startTime}ms - ${req.message.length} bytes`)
+            Logger.ERROR(`http://127.0.0.1:${port} - ${ req.cause ?? 500 } - ${req.message.length} bytes`)
         
-            return Response.json({ detail: req.message }, { status: req.cause as number ?? 500 })
+            return Response.json({ detail: req.message }, { status: req.cause as number ?? 500, headers })
         
-        }, port: 8000 })
+        }, port })
     
         Logger.INFO(`Server is running on http://${server.hostname}:${server.port} (Press CLTRL+C to quit)`)
     }
