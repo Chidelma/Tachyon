@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { Lawger } from './Lawger';
 
 function parsePaths(paths: string[]) {

@@ -4,5 +4,8 @@
   "devDependencies": {
     "@types/node": "^16",
     "bun-types": "^1.0.1"
+  },
+  "bin": {
+    "takeeon": "src/Stahrt.ts"
   }
 }
