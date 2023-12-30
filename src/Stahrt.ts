@@ -38,9 +38,9 @@ const server = Bun.serve({async fetch(req: Request) {
 
     const [file, func] = url.pathname.split('/').slice(1, 3)
 
-    const handler = await import(`${process.cwd()}/src/${file}.ts`)
+    const module = await import(`${process.cwd()}/src/${file}`)
 
-    const controller = (new handler() as any).constructor
+    const controller = (new module.default() as any).constructor
 
     if(controller[func] === undefined) throw new Error(`${func} route does not exist in ${file} controller`, { cause: 501 })
 
@@ -64,16 +64,16 @@ const server = Bun.serve({async fetch(req: Request) {
 
     } else data = await route(req.headers)
 
-    Lawger.INFO(`http://${url.host}:${url.port} - "${req.method} ${url.pathname} ${url.protocol}" 200 OK - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} bytes`)
+    Lawger.INFO(`http://${url.hostname}:${url.port} - "${req.method} ${url.pathname}" 200 OK - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} bytes`)
     
     return typeof data === 'object' ? Response.json(data, { status: 200 }) : new Response(data, { status: 200 })
 
 }, error(req) {
 
-    Lawger.ERROR(`http://127.0.0.1:8000 - ${ req.cause ?? 500 } - ${req.message.length} bytes`)
+    Lawger.ERROR(`http://127.0.0.1:${process.env.PORT || 8000} - ${ req.cause ?? 500 } - ${req.message.length} bytes`)
 
     return Response.json({ detail: req.message }, { status: req.cause as number ?? 500 })
 
-}})
+}, port: process.env.PORT || 8000 })
 
 Lawger.INFO(`Server is running on http://${server.hostname}:${server.port} (Press CLTRL+C to quit)`)
