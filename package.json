@@ -7,5 +7,6 @@
   },
   "bin": {
     "takeeon": "src/Stahrt.ts"
-  }
+  },
+  "type": "module"
 }
