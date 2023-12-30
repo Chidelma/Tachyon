@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { watch } from 'fs';
 import { Lawger } from './Lawger';
 
 function parsePaths(paths: string[]) {
@@ -79,3 +80,12 @@ const server = Bun.serve({async fetch(req: Request) {
 }, port: process.env.PORT || 8000 })
 
 Lawger.INFO(`Server is running on http://${server.hostname}:${server.port} (Press CLTRL+C to quit)`)
+
+const watcher = watch(`${process.cwd()}/src`, (event, filename) => {
+    server.reload({ fetch: server.fetch })
+})
+
+process.on('SIGINT', () => {
+    watcher.close()
+    process.exit(0)
+})
