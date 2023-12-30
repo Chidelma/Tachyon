@@ -6,7 +6,8 @@
     "bun-types": "^1.0.1"
   },
   "bin": {
-    "eon": "src/Stahrt.ts"
+    "eon": "src/Stahrt.ts",
+    "takeeon": "src/Stahrt.ts"
   },
   "type": "module"
 }
