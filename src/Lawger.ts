@@ -1,4 +1,4 @@
-export class Logger {
+export class Lawger {
 
     static INFO(...args: any[]) {
         const log = `INFO - ${args}`
