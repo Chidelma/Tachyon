@@ -1,4 +1,4 @@
-export class Lawger {
+export default class Lawger {
 
     static INFO(...args: any[]) {
         const log = `INFO - ${args}`
@@ -13,6 +13,11 @@ export class Lawger {
     static ERROR(...args: any[]) {
         const log = `ERROR - ${args}`
         console.info(`${this.getDate()} - ${log}`)
+    }
+
+    static DEBUG(...args: any[]) {
+        const log = `DEBUG - ${args}`
+        console.debug(`${this.getDate()} - ${log}`)
     }
 
     private static getDate() {
