@@ -1,6 +1,9 @@
-export default function handler() {
-    
-    return {
-        hello: 'world'
+export default class {
+
+    static handler() {
+
+        return {
+            hello: 'world'
+        }
     }
 }

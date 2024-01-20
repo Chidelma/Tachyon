@@ -129,7 +129,11 @@ export default class Eon {
     
             staticPaths.push(staticPath)
 
-            const handler = (await import(`${process.cwd()}/routes/${route}`)).default
+            const module = await import(`${process.cwd()}/routes/${route}`)
+
+            const controller = (new module.default() as any).constructor
+
+            const handler = controller['handler']
 
             if(handler === undefined) throw new Error(`Handler for ${route} does not exist`)
 

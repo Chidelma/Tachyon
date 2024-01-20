@@ -1,6 +1,9 @@
-export default function handler(headers: Headers) {
+export default class {
 
-    console.log(headers)
+    static handler(headers: Headers) {
 
-    return "Index File!!"
+        console.log(headers)
+    
+        return "Index File!!"
+    }
 }
