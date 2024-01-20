@@ -36,6 +36,10 @@ export default class Eon {
             const url = new URL(req.url)
         
             const [route, params] = url.pathname.split(':')
+
+            Bun.env.ROUTE = route
+
+            Bun.env.HEADERS = JSON.stringify(req.headers)
         
             const handler = Eon.findRoute(route)
         
@@ -51,10 +55,10 @@ export default class Eon {
 
                     const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
     
-                    return await middleware(req, handler, [await Eon.transformRequest(req, contentType), req.headers])
+                    return await middleware(req, handler, [await Eon.transformRequest(req, contentType)])
                 }
             
-                data = await handler(await Eon.transformRequest(req, contentType), req.headers)
+                data = await handler(await Eon.transformRequest(req, contentType))
         
             } else if(params) {
 
@@ -62,10 +66,10 @@ export default class Eon {
 
                     const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
     
-                    return await middleware(req, handler, [...Eon.parseParams(params.split('/')), req.headers])
+                    return await middleware(req, handler, [...Eon.parseParams(params.split('/'))])
                 }
         
-                data = await handler(...Eon.parseParams(params.split('/')), req.headers)
+                data = await handler(...Eon.parseParams(params.split('/')))
         
             } else {
 
@@ -73,10 +77,10 @@ export default class Eon {
 
                     const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
     
-                    return await middleware(req, handler, [req.headers])
+                    return await middleware(req, handler, [])
                 }
 
-                data = await handler(req.headers)
+                data = await handler()
             }
         
             Logger.INFO(`http://${url.hostname}:${url.port} - "${req.method} ${url.pathname}" 200 OK - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} bytes`)

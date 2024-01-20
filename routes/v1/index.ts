@@ -1,8 +1,8 @@
 export default class {
 
-    static handler(headers: Headers) {
+    static handler() {
 
-        console.log(headers)
+        console.log(process.env.HEADERS)
     
         return "Index File!!"
     }
