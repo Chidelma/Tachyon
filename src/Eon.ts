@@ -1,101 +1,243 @@
-import { Glob } from "bun";
-import Logger from "./Lawger"
+import { Glob, Server } from "bun";
 import { watch } from 'fs';
+import pino from "pino";
+import { AsyncLocalStorage } from "async_hooks";
 
-export default class Eon {
+export default class Tak {
 
-    private static indexedRoutes: Map<string, Function> = new Map()
+    private static indexedRoutes = new Map<string, Map<string, Function>>()
+
+    private static methods = ['GET', 'POST', 'PUT', 'HEAD', 'DELETE', 'PATCH', 'OPTIONS']
 
     private static hasMiddleware = false
 
-    private static findRoute(route: string) {
+    private static readonly UPGRADE = 'Upgrade'
+
+    private static readonly WSProtocol = 'Sec-WebSocket-Protocol'
+
+    constructor() {
+        //@ts-ignore
+        global.Eon = Tak
+        //@ts-ignore
+        globalThis.Eon.Depends = Tak.Depends
+        //@ts-ignore
+        globalThis.Eon.Context = new AsyncLocalStorage<_HTTPContext>()
+        
+        Tak.serve()
+    }
+
+    static Depends(...dependants: Function[]) {
+
+        return function(cls: Object, funcName: string, propDesc: PropertyDescriptor) {
+
+            const originalFunc: Function = propDesc.value
+    
+            const depends = async () => { for(const func of dependants) await func() }
+            
+            propDesc.value = async function(...args: any[]) {
+    
+                await depends()
+
+                const { websocket } = Eon.Context.getStore()!
+        
+                if(!websocket) return originalFunc.apply(this, args)
+            }
+    
+            propDesc.value.prototype = {
+                ...originalFunc.prototype,
+                depends
+            }
+        }
+    }
+
+    private static getHandler(url: URL, method: string) {
 
         let handler = undefined
 
-        const paths = route.split('/')
+        const paths = url.pathname.split('/')
 
-        for(const route of Eon.indexedRoutes.keys()) {
+        const lastIdx = paths.length - 1
 
-            if(route.startsWith(paths[0]) && (route.endsWith(`${paths[paths.length - 1]}.ts`) || route.endsWith(`${paths[paths.length - 1]}/index.ts`))) {
-                handler = Eon.indexedRoutes.get(route)
+        for(const [routeKey, routeMap] of Tak.indexedRoutes) {
+
+            if(routeKey.startsWith(paths[0]) && (routeKey.endsWith(`${paths[lastIdx]}.ts`) || routeKey.endsWith(`${paths[lastIdx]}/index.ts`))) {
+
+                handler = routeMap.get(method)
+                
                 break
             }
         }
 
-        if(handler === undefined) throw new Error(`Route ${route} not found`, { cause: 404 })
+        if(handler === undefined) throw new Error(`Route ${url.pathname} not found`, { cause: 404 })
 
-        return handler
+        return { handler, params: url.search.replace('?', '').split('/') }
     }
 
-    static async serve() {
+    private static async serveStaticFile(path: string) {
 
-        await Eon.validateRoutes()
+        const file = Bun.file(`${process.cwd()}/public/${path}`)
 
-        const server = Bun.serve({async fetch(req: Request) {
+        if(!await file.exists()) throw new Error(`File not found`, { cause: 404 })
+
+        return file
+    }
+
+    private static configLogger() {
+
+        const Logger = pino({
+            transport: {
+                target: 'pino-pretty',
+                options: {
+                    colorize: true
+                }
+            }
+        })
+
+        console.log = (msg) => Logger.info(msg)
+        console.info = (msg) => Logger.info(msg)
+        console.error = (msg) => Logger.error(msg)
+        console.debug = (msg) => Logger.debug(msg)
+        console.warn = (msg) => Logger.warn(msg)
+        console.trace = (msg) => Logger.trace(msg)
+    }
+
+    private static async processRequest(req: Request, url: URL, method: string, contentType: string | null) {
+
+        const { handler, params } = Tak.getHandler(url, method)
+    
+        let data = undefined
+    
+        if(contentType) {
+
+            if(Tak.hasMiddleware) {
+
+                const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
+
+                return await middleware(req, handler, [await Tak.transformRequest(req, contentType)])
+            }
+
+            data = await handler(await Tak.transformRequest(req, contentType))
+    
+        } else if(params.length > 0) {
+
+            if(Tak.hasMiddleware) {
+
+                const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
+
+                return await middleware(req, handler, [...Tak.parseParams(params)])
+            }
+
+            data = await handler(...Tak.parseParams(params)) 
+    
+        } else {
+
+            if(Tak.hasMiddleware) {
+
+                const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
+
+                return await middleware(req, handler, [])
+            }
+
+            data = await handler()
+        }
+
+        return data
+    }
+
+    private static async serve() {
+
+        await Tak.validateRoutes()
+
+        Tak.configLogger()
+
+        const server = Bun.serve({ async fetch(req: Request) {
 
             const url = new URL(req.url)
-        
-            const [route, params] = url.pathname.split(':')
 
-            Bun.env.ROUTE = route
+            if(req.headers.get('Connection') === Tak.UPGRADE && req.headers.get(Tak.UPGRADE) === 'websocket') {
 
-            Bun.env.HEADERS = JSON.stringify(req.headers)
-        
-            const handler = Eon.findRoute(route)
-        
-            const contentType = req.headers.get('Content-Type')
-        
-            let data = undefined
-        
-            const startTime = Date.now()
-        
-            if(contentType) {
+                const method = req.headers.get(Tak.WSProtocol)
+                    
+                if(!server.upgrade<_WSContext>(req, { data: { url, method }})) throw new Error('WebSocket upgrade error', { cause: 500 })
 
-                if(Eon.hasMiddleware) {
-
-                    const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
-    
-                    return await middleware(req, handler, [await Eon.transformRequest(req, contentType)])
-                }
-            
-                data = await handler(await Eon.transformRequest(req, contentType))
-        
-            } else if(params) {
-
-                if(Eon.hasMiddleware) {
-
-                    const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
-    
-                    return await middleware(req, handler, [...Eon.parseParams(params.split('/'))])
-                }
-        
-                data = await handler(...Eon.parseParams(params.split('/')))
-        
-            } else {
-
-                if(Eon.hasMiddleware) {
-
-                    const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
-    
-                    return await middleware(req, handler, [])
-                }
-
-                data = await handler()
+                console.log('Upgraded to WebSocket!')
+                
+                return undefined
             }
-        
-            Logger.INFO(`http://${url.hostname}:${url.port} - "${req.method} ${url.pathname}" 200 OK - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} bytes`)
+
+            return await Eon.Context.run({ headers: req.headers, url, websocket: false }, async () => {
+    
+                const pattern = /\.(jpg|jpeg|png|gif|bmp|ico|svg|webp|css|scss|sass|less|js|json|xml|html|woff|woff2|ttf|eot)$/i
+    
+                const startTime = Date.now()
+    
+                if(pattern.test(url.pathname)) {
+                    
+                    const file = await Tak.serveStaticFile(url.pathname)
+    
+                    const res = new Response(file, { status: 200 })
+    
+                    console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${file.size} byte(s)`)
+                
+                    return res
+                }
+
+                const contentType = req.headers.get('Content-Type')
+                
+                const data = await Tak.processRequest(req, url, req.method, contentType)
+    
+                let res: Response;
+    
+                if(typeof data === 'object') {
+                    res = Response.json(data, { status: 200 })
+                    Tak.publish(server, req.headers, JSON.stringify(data))
+                } else {
+                    res = new Response(data, { status: 200 })
+                    Tak.publish(server, req.headers, data)
+                }
             
-            return typeof data === 'object' ? Response.json(data, { status: 200 }) : new Response(data, { status: 200 })
+                console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} byte(s)`)
+                
+                return res
+            })
         
+        }, websocket: {
+
+            open(ws) {
+                const { url } = ws.data as _WSContext
+                ws.send(`Successfully connected ${url.toString()}`)
+            }, 
+            async message(ws, message: string) {
+
+                const headers: Headers = JSON.parse(message)
+
+                const { url, method } = ws.data as _WSContext
+
+                if(method === null) throw new Error('Method not provided for WebSocket Connection', { cause: 404 })
+                
+                await Eon.Context.run({ headers, url, websocket: true }, async () => { 
+                    
+                    const { handler } = Tak.getHandler(url, method)
+
+                    if(handler.prototype && handler.prototype.depends) await handler.prototype.depends()
+                })
+
+                ws.subscribe(headers.get('channel')!)
+            },
+            close(ws, code, reason) {
+                const { url } = ws.data as _WSContext
+                ws.send(`Successfully disconnected from ${url.toString()}`)
+            }
+
         }, error(req) {
         
-            Logger.ERROR(`http://127.0.0.1:${process.env.PORT || 8000} - ${ req.cause ?? 500 } - ${req.message.length} bytes`)
-        
-            return Response.json({ detail: req.message }, { status: req.cause as number ?? 500 })
+            const res = Response.json({ detail: req.message }, { status: req.cause as number ?? 500 })
+
+            console.error(`${res.status} - ${req.message.length} byte(s)`)
+
+            return res
         
         }, port: process.env.PORT || 8000 })
-
-        Logger.INFO(`Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit)`)
 
         const watcher = watch(`${process.cwd()}/routes`, (event, filename) => {
             server.reload({ fetch: server.fetch })
@@ -105,13 +247,19 @@ export default class Eon {
             watcher.close()
             process.exit(0)
         })
+
+        console.info(`Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit)`)
+    }
+
+    private static publish(server: Server, headers: Headers, msg: string) {
+        server.publish(headers.get('channel')!, msg)
     }
 
     private static async validateRoutes() {
 
-        const files = (await Array.fromAsync(new Glob(`**/*.ts`).scan({ cwd: './routes' })))
+        const files = (await Array.fromAsync(new Glob(`**/*.{ts,js}`).scan({ cwd: './routes' })))
 
-        Eon.hasMiddleware = files.some((file) => file.includes('_middleware.ts'))
+        Tak.hasMiddleware = files.some((file) => file.includes('_middleware'))
 
         const routes = files.filter((route) => !route.split('/').some((path) => path.startsWith('_')))
 
@@ -137,11 +285,17 @@ export default class Eon {
 
             const controller = (new module.default() as any).constructor
 
-            const handler = controller['handler']
+            const methodFuncs = new Map<string, Function>()
 
-            if(handler === undefined) throw new Error(`Handler for ${route} does not exist`)
+            for(const method of Tak.methods) {
 
-            Eon.indexedRoutes.set(route, handler)
+                if(controller[method]) {
+
+                    methodFuncs.set(method, controller[method])
+                }
+            }
+
+            Tak.indexedRoutes.set(route, methodFuncs)
         }
     }
 

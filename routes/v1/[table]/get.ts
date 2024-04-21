@@ -1,8 +1,9 @@
+import { TEST } from "../../_utils/find"
+
 export default class {
 
-    static handler() {
-
-        console.log(Bun.env.ROUTE)
+    @Eon.Depends(TEST('admin'))
+    static GET() {
 
         return {
             hello: 'world'

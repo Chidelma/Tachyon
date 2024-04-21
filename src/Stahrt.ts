@@ -1,10 +1,8 @@
 #!/usr/bin/env node
-
-import Eon from './Eon'
-import Logger from './Lawger'
+import Tak from "./Eon"
 
 try {
-    await Eon.serve()
+    new Tak()
 } catch(e) {
-    if(e instanceof Error) Logger.ERROR(e.message)
+    if(e instanceof Error) console.error(e.message)
 }

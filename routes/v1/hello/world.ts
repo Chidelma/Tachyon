@@ -1,7 +1,7 @@
 export default class {
 
-    static handler(code: number) {
-        console.log(code)
+    static POST(code: number) {
+        console.info(code)
         return "Hello World"
     }
 }
