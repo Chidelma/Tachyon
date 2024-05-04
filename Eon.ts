@@ -2,12 +2,21 @@ import { Glob, Server } from "bun";
 import { watch } from 'fs';
 import pino from "pino";
 import { AsyncLocalStorage } from "async_hooks";
+import { startRxStorageRemoteWebsocketServer } from "rxdb/plugins/storage-remote-websocket"
+import { getRxStorageMemory } from 'rxdb/plugins/storage-memory'
+import { _AccessControl, _WSContext, _HTTPContext } from "./types/global";
 
 export default class Tak {
 
     private static indexedRoutes = new Map<string, Map<string, Function>>()
 
-    private static methods = ['GET', 'POST', 'PUT', 'HEAD', 'DELETE', 'PATCH', 'OPTIONS']
+    private static allowedMethods = ['GET', 'POST', 'PUT', 'HEAD', 'DELETE', 'PATCH', 'OPTIONS']
+
+    private static allowedOrigins = []
+
+    private static allowedHeaders = []
+
+    private static allowCredentials = true
 
     private static hasMiddleware = false
 
@@ -15,14 +24,9 @@ export default class Tak {
 
     private static readonly WSProtocol = 'Sec-WebSocket-Protocol'
 
+    static Context = new AsyncLocalStorage<_HTTPContext>()
+
     constructor() {
-        //@ts-ignore
-        global.Eon = Tak
-        //@ts-ignore
-        globalThis.Eon.Depends = Tak.Depends
-        //@ts-ignore
-        globalThis.Eon.Context = new AsyncLocalStorage<_HTTPContext>()
-        
         Tak.serve()
     }
 
@@ -38,7 +42,7 @@ export default class Tak {
     
                 await depends()
 
-                const { websocket } = Eon.Context.getStore()!
+                const { websocket } = Tak.Context.getStore()!
         
                 if(!websocket) return originalFunc.apply(this, args)
             }
@@ -50,7 +54,11 @@ export default class Tak {
         }
     }
 
-    private static getHandler(url: URL, method: string) {
+    private static getHandler() {
+
+        const { request } = Tak.Context.getStore()!
+
+        const url = new URL(request.url)
 
         let handler = undefined
 
@@ -62,7 +70,7 @@ export default class Tak {
 
             if(routeKey.startsWith(paths[0]) && (routeKey.endsWith(`${paths[lastIdx]}.ts`) || routeKey.endsWith(`${paths[lastIdx]}/index.ts`))) {
 
-                handler = routeMap.get(method)
+                handler = routeMap.get(request.method)
                 
                 break
             }
@@ -73,9 +81,13 @@ export default class Tak {
         return { handler, params: url.search.replace('?', '').split('/') }
     }
 
-    private static async serveStaticFile(path: string) {
+    private static async serveStaticFile() {
 
-        const file = Bun.file(`${process.cwd()}/public/${path}`)
+        const { request } = Tak.Context.getStore()!
+
+        const url = new URL(request.url)
+
+        const file = Bun.file(`${process.cwd()}/public/${url.pathname}`)
 
         if(!await file.exists()) throw new Error(`File not found`, { cause: 404 })
 
@@ -93,19 +105,47 @@ export default class Tak {
             }
         })
 
-        console.log = (msg) => Logger.info(msg)
-        console.info = (msg) => Logger.info(msg)
-        console.error = (msg) => Logger.error(msg)
-        console.debug = (msg) => Logger.debug(msg)
-        console.warn = (msg) => Logger.warn(msg)
-        console.trace = (msg) => Logger.trace(msg)
+        console.log = (msg) => {
+            Logger.info(msg)
+            const { logs } = Tak.Context.getStore()!
+            logs.push(`[${new Date().toUTCString()}] [INFO] ${msg}`)
+        }
+        console.info = (msg) => {
+            Logger.info(msg)
+            const { logs } = Tak.Context.getStore()!
+            logs.push(`[${new Date().toUTCString()}] [INFO] ${msg}`)
+        }
+        console.error = (msg) => {
+            Logger.error(msg)
+            const { logs } = Tak.Context.getStore()!
+            logs.push(`[${new Date().toUTCString()}] [ERROR] ${msg}`)
+        }
+        console.debug = (msg) => {
+            Logger.debug(msg)
+            const { logs } = Tak.Context.getStore()!
+            logs.push(`[${new Date().toUTCString()}] [DEBUG] ${msg}`)
+        }
+        console.warn = (msg) => {
+            Logger.warn(msg)
+            const { logs } = Tak.Context.getStore()!
+            logs.push(`[${new Date().toUTCString()}] [WARN] ${msg}`)
+        }
+        console.trace = (msg) => {
+            Logger.trace(msg)
+            const { logs } = Tak.Context.getStore()!
+            logs.push(`[${new Date().toUTCString()}] [TRACE] ${msg}`)
+        }
     }
 
-    private static async processRequest(req: Request, url: URL, method: string, contentType: string | null) {
+    private static async processRequest() {
 
-        const { handler, params } = Tak.getHandler(url, method)
+        const { request } = Tak.Context.getStore()!
+
+        const { handler, params } = Tak.getHandler()
     
         let data = undefined
+
+        const contentType = request.headers.get('ContentType')
     
         if(contentType) {
 
@@ -113,10 +153,10 @@ export default class Tak {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(req, handler, [await Tak.transformRequest(req, contentType)])
+                return await middleware(async () => handler(await Tak.transformRequest()))
             }
 
-            data = await handler(await Tak.transformRequest(req, contentType))
+            data = await handler(await Tak.transformRequest())
     
         } else if(params.length > 0) {
 
@@ -124,7 +164,7 @@ export default class Tak {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(req, handler, [...Tak.parseParams(params)])
+                return await middleware(() => handler(...Tak.parseParams(params)))
             }
 
             data = await handler(...Tak.parseParams(params)) 
@@ -135,13 +175,31 @@ export default class Tak {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(req, handler, [])
+                return await middleware(() => handler())
             }
 
             data = await handler()
         }
 
         return data
+    }
+
+    private static async connect() {
+
+        const server = startRxStorageRemoteWebsocketServer({
+            port: 8080,
+            database: getRxStorageMemory(),
+            async customRequestHandler(msg: any) {
+
+                console.log(msg)
+            }
+        })
+
+        process.on('SIGINT', () => {
+            process.exit(0)
+        })
+
+        console.info(`Server is running (Press CTRL+C to quit)`)
     }
 
     private static async serve() {
@@ -152,28 +210,37 @@ export default class Tak {
 
         const server = Bun.serve({ async fetch(req: Request) {
 
+            const ipAddress: string = server.requestIP(req)!.address
+
             const url = new URL(req.url)
 
             if(req.headers.get('Connection') === Tak.UPGRADE && req.headers.get(Tak.UPGRADE) === 'websocket') {
 
                 const method = req.headers.get(Tak.WSProtocol)
                     
-                if(!server.upgrade<_WSContext>(req, { data: { url, method }})) throw new Error('WebSocket upgrade error', { cause: 500 })
+                if(!server.upgrade<_WSContext>(req, { data: { method, request: req, ipAddress }})) throw new Error('WebSocket upgrade error', { cause: 500 })
 
                 console.log('Upgraded to WebSocket!')
                 
                 return undefined
             }
+            
+            const startTime = Date.now()
 
-            return await Eon.Context.run({ headers: req.headers, url, websocket: false }, async () => {
+            const accessControl: _AccessControl = {
+                allowCredentials: Tak.allowCredentials,
+                allowedHeaders: Tak.allowedHeaders,
+                allowedMethods: Tak.allowedMethods,
+                allowedOrigins: Tak.allowedOrigins
+            }
+
+            return await Tak.Context.run({ websocket: false, request: req, requestTime: startTime, accessControl, ipAddress, logs: [] }, async () => {
     
                 const pattern = /\.(jpg|jpeg|png|gif|bmp|ico|svg|webp|css|scss|sass|less|js|json|xml|html|woff|woff2|ttf|eot)$/i
     
-                const startTime = Date.now()
-    
                 if(pattern.test(url.pathname)) {
                     
-                    const file = await Tak.serveStaticFile(url.pathname)
+                    const file = await Tak.serveStaticFile()
     
                     const res = new Response(file, { status: 200 })
     
@@ -181,19 +248,21 @@ export default class Tak {
                 
                     return res
                 }
-
-                const contentType = req.headers.get('Content-Type')
                 
-                const data = await Tak.processRequest(req, url, req.method, contentType)
+                const data = await Tak.processRequest()
     
                 let res: Response;
+
+                const channel = req.headers.get('channel')
+
+                const publish = (msg: string) => server.publish(channel!, msg)
     
                 if(typeof data === 'object') {
                     res = Response.json(data, { status: 200 })
-                    Tak.publish(server, req.headers, JSON.stringify(data))
+                    if(channel) publish(JSON.stringify(data))
                 } else {
                     res = new Response(data, { status: 200 })
-                    Tak.publish(server, req.headers, data)
+                    if(channel) publish(data)
                 }
             
                 console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} byte(s)`)
@@ -204,20 +273,21 @@ export default class Tak {
         }, websocket: {
 
             open(ws) {
-                const { url } = ws.data as _WSContext
-                ws.send(`Successfully connected ${url.toString()}`)
+                const { request, method } = ws.data as _WSContext
+                const url = new URL(request.url)
+                ws.send(`Successfully connected ${url.pathname} - ${method}`)
             }, 
             async message(ws, message: string) {
 
                 const headers: Headers = JSON.parse(message)
 
-                const { url, method } = ws.data as _WSContext
+                const { request, method, ipAddress } = ws.data as _WSContext
 
                 if(method === null) throw new Error('Method not provided for WebSocket Connection', { cause: 404 })
                 
-                await Eon.Context.run({ headers, url, websocket: true }, async () => { 
+                await Tak.Context.run({ request, websocket: true, ipAddress, logs: [] }, async () => { 
                     
-                    const { handler } = Tak.getHandler(url, method)
+                    const { handler } = Tak.getHandler()
 
                     if(handler.prototype && handler.prototype.depends) await handler.prototype.depends()
                 })
@@ -225,8 +295,9 @@ export default class Tak {
                 ws.subscribe(headers.get('channel')!)
             },
             close(ws, code, reason) {
-                const { url } = ws.data as _WSContext
-                ws.send(`Successfully disconnected from ${url.toString()}`)
+                const { request, method } = ws.data as _WSContext
+                const url = new URL(request.url)
+                ws.send(`Successfully disconnected from ${url.pathname} - ${method}`)
             }
 
         }, error(req) {
@@ -287,7 +358,7 @@ export default class Tak {
 
             const methodFuncs = new Map<string, Function>()
 
-            for(const method of Tak.methods) {
+            for(const method of Tak.allowedMethods) {
 
                 if(controller[method]) {
 
@@ -319,14 +390,18 @@ export default class Tak {
         return parsedParams
     }
 
-    private static async transformRequest(req: Request, contentType: string) {
+    private static async transformRequest() {
 
-        if(contentType.includes('json')) return await req.json()
+        const { request } = Tak.Context.getStore()!
+
+        const contentType = request.headers.get('Content-Type')!
+
+        if(contentType.includes('json')) return await request.json()
         
-        if(contentType.includes('text')) return await req.text()
+        if(contentType.includes('text')) return await request.text()
     
-        if(contentType.includes('form')) return await req.formData()
+        if(contentType.includes('form')) return await request.formData()
     
-        return await req.blob() 
+        return await request.blob() 
     }
 }

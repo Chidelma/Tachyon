@@ -1,3 +1,4 @@
+import Eon from "../../../Eon"
 import { TEST } from "../../_utils/find"
 
 export default class {
