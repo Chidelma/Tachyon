@@ -1,10 +1,11 @@
-import { Glob, Server } from "bun";
+import { Glob } from "bun";
 import { watch } from 'fs';
 import pino from "pino";
 import { AsyncLocalStorage } from "async_hooks";
 import { startRxStorageRemoteWebsocketServer } from "rxdb/plugins/storage-remote-websocket"
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory'
-import { _AccessControl, _WSContext, _HTTPContext } from "./types/global";
+import { _AccessControl, _WSContext, _HTTPContext, _config } from "./types/global";
+import { generateHeapSnapshot } from "bun";
 
 export default class Tak {
 
@@ -19,6 +20,14 @@ export default class Tak {
     private static allowCredentials = true
 
     private static hasMiddleware = false
+
+    private static saveLogs = false
+
+    private static logDestination = ''
+
+    private static saveHeaps = false
+
+    private static heapDestination = ''
 
     private static readonly UPGRADE = 'Upgrade'
 
@@ -107,33 +116,45 @@ export default class Tak {
 
         console.log = (msg) => {
             Logger.info(msg)
-            const { logs } = Tak.Context.getStore()!
-            logs.push(`[${new Date().toUTCString()}] [INFO] ${msg}`)
+            if(this.saveLogs) {
+                const { logs } = Tak.Context.getStore()!
+                logs.push(`[${new Date().toUTCString()}] [INFO] ${msg}`)
+            }
         }
         console.info = (msg) => {
             Logger.info(msg)
-            const { logs } = Tak.Context.getStore()!
-            logs.push(`[${new Date().toUTCString()}] [INFO] ${msg}`)
+            if(this.saveLogs) {
+                const { logs } = Tak.Context.getStore()!
+                logs.push(`[${new Date().toUTCString()}] [INFO] ${msg}`)
+            }
         }
         console.error = (msg) => {
             Logger.error(msg)
-            const { logs } = Tak.Context.getStore()!
-            logs.push(`[${new Date().toUTCString()}] [ERROR] ${msg}`)
+            if(this.saveLogs) {
+                const { logs } = Tak.Context.getStore()!
+                logs.push(`[${new Date().toUTCString()}] [ERROR] ${msg}`)
+            }
         }
         console.debug = (msg) => {
             Logger.debug(msg)
-            const { logs } = Tak.Context.getStore()!
-            logs.push(`[${new Date().toUTCString()}] [DEBUG] ${msg}`)
+            if(this.saveLogs) {
+                const { logs } = Tak.Context.getStore()!
+                logs.push(`[${new Date().toUTCString()}] [DEBUG] ${msg}`)
+            }
         }
         console.warn = (msg) => {
             Logger.warn(msg)
-            const { logs } = Tak.Context.getStore()!
-            logs.push(`[${new Date().toUTCString()}] [WARN] ${msg}`)
+            if(this.saveLogs) {
+                const { logs } = Tak.Context.getStore()!
+                logs.push(`[${new Date().toUTCString()}] [WARN] ${msg}`)
+            }
         }
         console.trace = (msg) => {
             Logger.trace(msg)
-            const { logs } = Tak.Context.getStore()!
-            logs.push(`[${new Date().toUTCString()}] [TRACE] ${msg}`)
+            if(this.saveLogs) {
+                const { logs } = Tak.Context.getStore()!
+                logs.push(`[${new Date().toUTCString()}] [TRACE] ${msg}`)
+            }
         }
     }
 
@@ -204,6 +225,8 @@ export default class Tak {
 
     private static async serve() {
 
+        await Tak.readConfiguration()
+
         await Tak.validateRoutes()
 
         Tak.configLogger()
@@ -264,6 +287,11 @@ export default class Tak {
                     res = new Response(data, { status: 200 })
                     if(channel) publish(data)
                 }
+
+                if(Tak.saveLogs) {
+                    const { logs } = Tak.Context.getStore()!
+                    await Bun.write(`${Tak.logDestination}/${url.pathname}/${req.method}/${crypto.randomUUID()}.txt`, logs.join('\n'))
+                }
             
                 console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} byte(s)`)
                 
@@ -300,11 +328,27 @@ export default class Tak {
                 ws.send(`Successfully disconnected from ${url.pathname} - ${method}`)
             }
 
-        }, error(req) {
+        }, async error(req) {
         
             const res = Response.json({ detail: req.message }, { status: req.cause as number ?? 500 })
 
-            console.error(`${res.status} - ${req.message.length} byte(s)`)
+            const { request, logs } = Tak.Context.getStore()!
+
+            const path = new URL(request.url).pathname
+
+            const method = request.method
+
+            const filename = crypto.randomUUID()
+
+            const heapDestination = `${Tak.heapDestination}/${path}/${method}/${filename}.json`
+
+            const logDestination = `${Tak.logDestination}/${path}/${method}/${filename}.txt`
+
+            if(Tak.saveHeaps) await Bun.write(heapDestination, JSON.stringify(generateHeapSnapshot(), null, 2))
+
+            if(Tak.saveLogs) await Bun.write(logDestination, logs.join('\n'))
+
+            console.error(`${res.status} - ${req.message.length} byte(s) ${Tak.saveHeaps ? `\nHeap File: ${heapDestination}` : ''} ${Tak.saveLogs ? `\nLog File: ${logDestination}` : ''}`)
 
             return res
         
@@ -322,8 +366,19 @@ export default class Tak {
         console.info(`Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit)`)
     }
 
-    private static publish(server: Server, headers: Headers, msg: string) {
-        server.publish(headers.get('channel')!, msg)
+    private static async readConfiguration() {
+
+        const config: _config = await Bun.file(`${process.cwd()}/config.json`).json()
+
+        if(config.logging) {
+            this.saveLogs = config.logging.save
+            this.logDestination = config.logging.path
+        }
+
+        if(config.heap) {
+            this.saveHeaps = config.heap.save
+            this.heapDestination = config.heap.path
+        }
     }
 
     private static async validateRoutes() {

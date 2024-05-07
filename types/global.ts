@@ -1,5 +1,3 @@
-import { AsyncLocalStorage } from "async_hooks";
-
 export interface _WSContext {
     request: Request
     method: string | null,
@@ -20,4 +18,19 @@ export interface _HTTPContext {
     accessControl?: _AccessControl
     ipAddress: string,
     logs: string[]
+}
+
+interface _logging {
+    save: boolean,
+    path: string
+}
+
+interface _heap {
+    save: boolean
+    path: string
+}
+
+export interface _config {
+    logging?: _logging,
+    heap?: _heap
 }
