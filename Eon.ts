@@ -116,32 +116,32 @@ export default class Tak {
         console.log = (msg) => {
             Logger.info(msg)
             const { logWriter } = Tak.Context.getStore()!
-            if(logWriter) logWriter.write(`[${new Date().toUTCString()}] [INFO] ${msg}\n`)
+            if(logWriter) logWriter.write(`[${new Date().toISOString()}] [INFO] ${msg}\n`)
         }
         console.info = (msg) => {
             Logger.info(msg)
             const { logWriter } = Tak.Context.getStore()!
-            if(logWriter) logWriter.write(`[${new Date().toUTCString()}] [INFO] ${msg}\n`)
+            if(logWriter) logWriter.write(`[${new Date().toISOString()}] [INFO] ${msg}\n`)
         }
         console.error = (msg) => {
             Logger.error(msg)
             const { logWriter } = Tak.Context.getStore()!
-            if(logWriter) logWriter.write(`[${new Date().toUTCString()}] [ERROR] ${msg}\n`)
+            if(logWriter) logWriter.write(`[${new Date().toISOString()}] [ERROR] ${msg}\n`)
         }
         console.debug = (msg) => {
             Logger.debug(msg)
             const { logWriter } = Tak.Context.getStore()!
-            if(logWriter) logWriter.write(`[${new Date().toUTCString()}] [DEBUG] ${msg}\n`)
+            if(logWriter) logWriter.write(`[${new Date().toISOString()}] [DEBUG] ${msg}\n`)
         }
         console.warn = (msg) => {
             Logger.warn(msg)
             const { logWriter } = Tak.Context.getStore()!
-            if(logWriter) logWriter.write(`[${new Date().toUTCString()}] [WARN] ${msg}\n`)
+            if(logWriter) logWriter.write(`[${new Date().toISOString()}] [WARN] ${msg}\n`)
         }
         console.trace = (msg) => {
             Logger.trace(msg)
             const { logWriter } = Tak.Context.getStore()!
-            if(logWriter) logWriter.write(`[${new Date().toUTCString()}] [TRACE] ${msg}\n`)
+            if(logWriter) logWriter.write(`[${new Date().toISOString()}] [TRACE] ${msg}\n`)
         }
     }
 
@@ -196,16 +196,10 @@ export default class Tak {
 
         const server = startRxStorageRemoteWebsocketServer({
             port: 8080,
-            database: getRxStorageMemory(),
-            async customRequestHandler(msg: any) {
-
-                console.log(msg)
-            }
+            database: getRxStorageMemory()
         })
 
-        process.on('SIGINT', () => {
-            process.exit(0)
-        })
+        process.on('SIGINT', () => process.exit(0))
 
         console.info(`Server is running (Press CTRL+C to quit)`)
     }
@@ -244,10 +238,11 @@ export default class Tak {
                 allowedOrigins: Tak.allowedOrigins
             }
 
-            let logWriter: FileSink | undefined = undefined;
+            let logWriter: FileSink | undefined;
 
             if(Tak.saveLogs) {
-                const file = Bun.file(`${Tak.logDestination}/${url.pathname}/${req.method}/${crypto.randomUUID()}.txt`)
+                const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
+                const file = Bun.file(`${Tak.logDestination}/${url.pathname}/${req.method}/${date}/${crypto.randomUUID()}.txt`)
                 logWriter = file.writer()
             }
 
@@ -331,7 +326,9 @@ export default class Tak {
 
             const filename = crypto.randomUUID()
 
-            const heapDestination = `${Tak.heapDestination}/${path}/${method}/${filename}.json`
+            const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
+
+            const heapDestination = `${Tak.heapDestination}/${path}/${method}/${date}/${filename}.json`
 
             if(Tak.saveHeaps) await Bun.write(heapDestination, JSON.stringify(generateHeapSnapshot(), null, 2))
 
