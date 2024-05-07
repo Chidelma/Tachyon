@@ -1,5 +1,4 @@
-import { Glob } from "bun";
-import { watch } from 'fs';
+import { FileSink, Glob } from "bun";
 import pino from "pino";
 import { AsyncLocalStorage } from "async_hooks";
 import { startRxStorageRemoteWebsocketServer } from "rxdb/plugins/storage-remote-websocket"
@@ -116,45 +115,33 @@ export default class Tak {
 
         console.log = (msg) => {
             Logger.info(msg)
-            if(this.saveLogs) {
-                const { logs } = Tak.Context.getStore()!
-                logs.push(`[${new Date().toUTCString()}] [INFO] ${msg}`)
-            }
+            const { logWriter } = Tak.Context.getStore()!
+            if(logWriter) logWriter.write(`[${new Date().toUTCString()}] [INFO] ${msg}\n`)
         }
         console.info = (msg) => {
             Logger.info(msg)
-            if(this.saveLogs) {
-                const { logs } = Tak.Context.getStore()!
-                logs.push(`[${new Date().toUTCString()}] [INFO] ${msg}`)
-            }
+            const { logWriter } = Tak.Context.getStore()!
+            if(logWriter) logWriter.write(`[${new Date().toUTCString()}] [INFO] ${msg}\n`)
         }
         console.error = (msg) => {
             Logger.error(msg)
-            if(this.saveLogs) {
-                const { logs } = Tak.Context.getStore()!
-                logs.push(`[${new Date().toUTCString()}] [ERROR] ${msg}`)
-            }
+            const { logWriter } = Tak.Context.getStore()!
+            if(logWriter) logWriter.write(`[${new Date().toUTCString()}] [ERROR] ${msg}\n`)
         }
         console.debug = (msg) => {
             Logger.debug(msg)
-            if(this.saveLogs) {
-                const { logs } = Tak.Context.getStore()!
-                logs.push(`[${new Date().toUTCString()}] [DEBUG] ${msg}`)
-            }
+            const { logWriter } = Tak.Context.getStore()!
+            if(logWriter) logWriter.write(`[${new Date().toUTCString()}] [DEBUG] ${msg}\n`)
         }
         console.warn = (msg) => {
             Logger.warn(msg)
-            if(this.saveLogs) {
-                const { logs } = Tak.Context.getStore()!
-                logs.push(`[${new Date().toUTCString()}] [WARN] ${msg}`)
-            }
+            const { logWriter } = Tak.Context.getStore()!
+            if(logWriter) logWriter.write(`[${new Date().toUTCString()}] [WARN] ${msg}\n`)
         }
         console.trace = (msg) => {
             Logger.trace(msg)
-            if(this.saveLogs) {
-                const { logs } = Tak.Context.getStore()!
-                logs.push(`[${new Date().toUTCString()}] [TRACE] ${msg}`)
-            }
+            const { logWriter } = Tak.Context.getStore()!
+            if(logWriter) logWriter.write(`[${new Date().toUTCString()}] [TRACE] ${msg}\n`)
         }
     }
 
@@ -257,7 +244,14 @@ export default class Tak {
                 allowedOrigins: Tak.allowedOrigins
             }
 
-            return await Tak.Context.run({ websocket: false, request: req, requestTime: startTime, accessControl, ipAddress, logs: [] }, async () => {
+            let logWriter: FileSink | undefined = undefined;
+
+            if(Tak.saveLogs) {
+                const file = Bun.file(`${Tak.logDestination}/${url.pathname}/${req.method}/${crypto.randomUUID()}.txt`)
+                logWriter = file.writer()
+            }
+
+            return await Tak.Context.run({ websocket: false, request: req, requestTime: startTime, accessControl, ipAddress, logWriter }, async () => {
     
                 const pattern = /\.(jpg|jpeg|png|gif|bmp|ico|svg|webp|css|scss|sass|less|js|json|xml|html|woff|woff2|ttf|eot)$/i
     
@@ -288,10 +282,7 @@ export default class Tak {
                     if(channel) publish(data)
                 }
 
-                if(Tak.saveLogs) {
-                    const { logs } = Tak.Context.getStore()!
-                    await Bun.write(`${Tak.logDestination}/${url.pathname}/${req.method}/${crypto.randomUUID()}.txt`, logs.join('\n'))
-                }
+                if(logWriter) logWriter.end()
             
                 console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} byte(s)`)
                 
@@ -313,7 +304,7 @@ export default class Tak {
 
                 if(method === null) throw new Error('Method not provided for WebSocket Connection', { cause: 404 })
                 
-                await Tak.Context.run({ request, websocket: true, ipAddress, logs: [] }, async () => { 
+                await Tak.Context.run({ request, websocket: true, ipAddress }, async () => { 
                     
                     const { handler } = Tak.getHandler()
 
@@ -332,7 +323,7 @@ export default class Tak {
         
             const res = Response.json({ detail: req.message }, { status: req.cause as number ?? 500 })
 
-            const { request, logs } = Tak.Context.getStore()!
+            const { request, logWriter } = Tak.Context.getStore()!
 
             const path = new URL(request.url).pathname
 
@@ -342,26 +333,17 @@ export default class Tak {
 
             const heapDestination = `${Tak.heapDestination}/${path}/${method}/${filename}.json`
 
-            const logDestination = `${Tak.logDestination}/${path}/${method}/${filename}.txt`
-
             if(Tak.saveHeaps) await Bun.write(heapDestination, JSON.stringify(generateHeapSnapshot(), null, 2))
 
-            if(Tak.saveLogs) await Bun.write(logDestination, logs.join('\n'))
+            if(logWriter) logWriter.end()
 
-            console.error(`${res.status} - ${req.message.length} byte(s) ${Tak.saveHeaps ? `\nHeap File: ${heapDestination}` : ''} ${Tak.saveLogs ? `\nLog File: ${logDestination}` : ''}`)
+            console.error(`${res.status} - ${req.message.length} byte(s) ${Tak.saveHeaps ? `\nHeap File: ${heapDestination}` : ''}`)
 
             return res
         
         }, port: process.env.PORT || 8000 })
 
-        const watcher = watch(`${process.cwd()}/routes`, (event, filename) => {
-            server.reload({ fetch: server.fetch })
-        })
-
-        process.on('SIGINT', () => {
-            watcher.close()
-            process.exit(0)
-        })
+        process.on('SIGINT', () => process.exit(0))
 
         console.info(`Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit)`)
     }

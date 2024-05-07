@@ -1,3 +1,5 @@
+import { FileSink } from "bun"
+
 export interface _WSContext {
     request: Request
     method: string | null,
@@ -17,7 +19,7 @@ export interface _HTTPContext {
     requestTime?: number,
     accessControl?: _AccessControl
     ipAddress: string,
-    logs: string[]
+    logWriter?: FileSink
 }
 
 interface _logging {
