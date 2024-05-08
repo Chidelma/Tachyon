@@ -4,7 +4,8 @@ import { AsyncLocalStorage } from "async_hooks";
 import { startRxStorageRemoteWebsocketServer } from "rxdb/plugins/storage-remote-websocket"
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory'
 import { _AccessControl, _WSContext, _HTTPContext, _config } from "./types/global";
-import { generateHeapSnapshot } from "bun";
+import { generateHeapSnapshot } from "bun"
+import { existsSync, mkdirSync } from 'node:fs'
 
 export default class Tak {
 
@@ -31,6 +32,8 @@ export default class Tak {
     private static readonly UPGRADE = 'Upgrade'
 
     private static readonly WSProtocol = 'Sec-WebSocket-Protocol'
+
+    private static enableMemoryServer = false
 
     static Context = new AsyncLocalStorage<_HTTPContext>()
 
@@ -115,33 +118,45 @@ export default class Tak {
 
         console.log = (msg) => {
             Logger.info(msg)
-            const { logWriter } = Tak.Context.getStore()!
-            if(logWriter) logWriter.write(`[${new Date().toISOString()}] [INFO] ${msg}\n`)
+            if(Tak.Context.getStore()) {
+                const { logWriter } = Tak.Context.getStore()!
+                if(logWriter) logWriter.write(`[${new Date().toISOString()}] [INFO] ${msg}\n`)
+            }
         }
         console.info = (msg) => {
             Logger.info(msg)
-            const { logWriter } = Tak.Context.getStore()!
-            if(logWriter) logWriter.write(`[${new Date().toISOString()}] [INFO] ${msg}\n`)
+            if(Tak.Context.getStore()) {
+                const { logWriter } = Tak.Context.getStore()!
+                if(logWriter) logWriter.write(`[${new Date().toISOString()}] [INFO] ${msg}\n`)
+            }
         }
         console.error = (msg) => {
             Logger.error(msg)
-            const { logWriter } = Tak.Context.getStore()!
-            if(logWriter) logWriter.write(`[${new Date().toISOString()}] [ERROR] ${msg}\n`)
+            if(Tak.Context.getStore()) {
+                const { logWriter } = Tak.Context.getStore()!
+                if(logWriter) logWriter.write(`[${new Date().toISOString()}] [ERROR] ${msg}\n`)
+            }
         }
         console.debug = (msg) => {
             Logger.debug(msg)
-            const { logWriter } = Tak.Context.getStore()!
-            if(logWriter) logWriter.write(`[${new Date().toISOString()}] [DEBUG] ${msg}\n`)
+            if(Tak.Context.getStore()) {
+                const { logWriter } = Tak.Context.getStore()!
+                if(logWriter) logWriter.write(`[${new Date().toISOString()}] [DEBUG] ${msg}\n`)
+            }
         }
         console.warn = (msg) => {
             Logger.warn(msg)
-            const { logWriter } = Tak.Context.getStore()!
-            if(logWriter) logWriter.write(`[${new Date().toISOString()}] [WARN] ${msg}\n`)
+            if(Tak.Context.getStore()) {
+                const { logWriter } = Tak.Context.getStore()!
+                if(logWriter) logWriter.write(`[${new Date().toISOString()}] [WARN] ${msg}\n`)
+            }
         }
         console.trace = (msg) => {
             Logger.trace(msg)
-            const { logWriter } = Tak.Context.getStore()!
-            if(logWriter) logWriter.write(`[${new Date().toISOString()}] [TRACE] ${msg}\n`)
+            if(Tak.Context.getStore()) {
+                const { logWriter } = Tak.Context.getStore()!
+                if(logWriter) logWriter.write(`[${new Date().toISOString()}] [TRACE] ${msg}\n`)
+            }
         }
     }
 
@@ -192,16 +207,16 @@ export default class Tak {
         return data
     }
 
-    private static async connect() {
+    private static connect() {
 
-        const server = startRxStorageRemoteWebsocketServer({
-            port: 8080,
+        const port = process.env.LIVE_PORT || 8080
+
+        startRxStorageRemoteWebsocketServer({
+            port,
             database: getRxStorageMemory()
         })
 
-        process.on('SIGINT', () => process.exit(0))
-
-        console.info(`Server is running (Press CTRL+C to quit)`)
+        console.info(`RxDB Server is running on ws://localhost:${port} (Press CTRL+C to quit)`)
     }
 
     private static async serve() {
@@ -211,6 +226,8 @@ export default class Tak {
         await Tak.validateRoutes()
 
         Tak.configLogger()
+
+        if(Tak.enableMemoryServer) Tak.connect()
 
         const server = Bun.serve({ async fetch(req: Request) {
 
@@ -242,44 +259,69 @@ export default class Tak {
 
             if(Tak.saveLogs) {
                 const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
-                const file = Bun.file(`${Tak.logDestination}/${url.pathname}/${req.method}/${date}/${crypto.randomUUID()}.txt`)
+                const dir = `${Tak.logDestination}/${url.pathname}/${req.method}/${date}`
+                if(!existsSync(dir)) mkdirSync(dir, { recursive: true })
+                const file = Bun.file(`${dir}/${crypto.randomUUID()}.txt`)
                 logWriter = file.writer()
             }
 
             return await Tak.Context.run({ websocket: false, request: req, requestTime: startTime, accessControl, ipAddress, logWriter }, async () => {
-    
-                const pattern = /\.(jpg|jpeg|png|gif|bmp|ico|svg|webp|css|scss|sass|less|js|json|xml|html|woff|woff2|ttf|eot)$/i
-    
-                if(pattern.test(url.pathname)) {
-                    
-                    const file = await Tak.serveStaticFile()
-    
-                    const res = new Response(file, { status: 200 })
-    
-                    console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${file.size} byte(s)`)
                 
-                    return res
-                }
-                
-                const data = await Tak.processRequest()
-    
                 let res: Response;
+                
+                try {
 
-                const channel = req.headers.get('channel')
-
-                const publish = (msg: string) => server.publish(channel!, msg)
+                    const pattern = /\.(jpg|jpeg|png|gif|bmp|ico|svg|webp|css|scss|sass|less|js|json|xml|html|woff|woff2|ttf|eot)$/i
     
-                if(typeof data === 'object') {
-                    res = Response.json(data, { status: 200 })
-                    if(channel) publish(JSON.stringify(data))
-                } else {
-                    res = new Response(data, { status: 200 })
-                    if(channel) publish(data)
-                }
+                    if(pattern.test(url.pathname)) {
+                        
+                        const file = await Tak.serveStaticFile()
+        
+                        res = new Response(file, { status: 200 })
+        
+                        console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${file.size} byte(s)`)
+                    
+                        return res
+                    }
+                    
+                    const data = await Tak.processRequest()
 
-                if(logWriter) logWriter.end()
-            
-                console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} byte(s)`)
+                    const channel = req.headers.get('channel')
+
+                    const publish = (msg: string) => server.publish(channel!, msg)
+        
+                    if(typeof data === 'object') {
+                        res = Response.json(data, { status: 200 })
+                        if(channel) publish(JSON.stringify(data))
+                    } else {
+                        res = new Response(data, { status: 200 })
+                        if(channel) publish(data)
+                    }
+
+                    if(logWriter) logWriter.end()
+                
+                    console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} byte(s)`)
+
+                } catch(e: any) {
+
+                    const path = url.pathname
+
+                    const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
+
+                    const dir = `${Tak.heapDestination}/${path}/${req.method}/${date}`
+
+                    if(!existsSync(dir)) mkdirSync(dir, { recursive: true })
+
+                    const heapDestination = `${dir}/${crypto.randomUUID()}.json`
+
+                    if(logWriter) logWriter.end()
+
+                    if(Tak.saveHeaps) await Bun.write(heapDestination, JSON.stringify(generateHeapSnapshot(), null, 2))
+
+                    console.error(`"${req.method} ${path}" ${e.cause as number ?? 500} - ${Date.now() - startTime}ms - ${e.message.length} byte(s)`)
+
+                    res = Response.json({ detail: e.message }, { status: e.cause as number ?? 500 })
+                }
                 
                 return res
             })
@@ -314,35 +356,15 @@ export default class Tak {
                 ws.send(`Successfully disconnected from ${url.pathname} - ${method}`)
             }
 
-        }, async error(req) {
+        }, error(req) {
         
-            const res = Response.json({ detail: req.message }, { status: req.cause as number ?? 500 })
-
-            const { request, logWriter } = Tak.Context.getStore()!
-
-            const path = new URL(request.url).pathname
-
-            const method = request.method
-
-            const filename = crypto.randomUUID()
-
-            const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
-
-            const heapDestination = `${Tak.heapDestination}/${path}/${method}/${date}/${filename}.json`
-
-            if(Tak.saveHeaps) await Bun.write(heapDestination, JSON.stringify(generateHeapSnapshot(), null, 2))
-
-            if(logWriter) logWriter.end()
-
-            console.error(`${res.status} - ${req.message.length} byte(s) ${Tak.saveHeaps ? `\nHeap File: ${heapDestination}` : ''}`)
-
-            return res
+            console.error(req.message)
         
-        }, port: process.env.PORT || 8000 })
+        }, port: process.env.SERVER_PORT || 8000 })
 
         process.on('SIGINT', () => process.exit(0))
 
-        console.info(`Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit)`)
+        console.info(`Live Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit)`)
     }
 
     private static async readConfiguration() {
@@ -350,14 +372,18 @@ export default class Tak {
         const config: _config = await Bun.file(`${process.cwd()}/config.json`).json()
 
         if(config.logging) {
+            if(config.logging.save === undefined || config.logging.path === undefined) throw new Error("Please configuree logging")
             this.saveLogs = config.logging.save
             this.logDestination = config.logging.path
         }
 
         if(config.heap) {
+            if(config.heap.save === undefined || config.heap.path === undefined) throw new Error("Please configuree heap")
             this.saveHeaps = config.heap.save
             this.heapDestination = config.heap.path
         }
+
+        if(config.enableMemDB) Tak.enableMemoryServer = config.enableMemDB
     }
 
     private static async validateRoutes() {

@@ -34,5 +34,6 @@ interface _heap {
 
 export interface _config {
     logging?: _logging,
-    heap?: _heap
+    heap?: _heap,
+    enableMemDB?: boolean
 }
