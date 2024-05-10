@@ -1,8 +1,6 @@
 import { FileSink, Glob } from "bun";
 import pino from "pino";
 import { AsyncLocalStorage } from "async_hooks";
-import { startRxStorageRemoteWebsocketServer } from "rxdb/plugins/storage-remote-websocket"
-import { getRxStorageMemory } from 'rxdb/plugins/storage-memory'
 import { _AccessControl, _WSContext, _HTTPContext, _config } from "./types/global";
 import { generateHeapSnapshot } from "bun"
 import { existsSync, mkdirSync } from 'node:fs'
@@ -31,45 +29,19 @@ export default class Tak {
 
     private static readonly UPGRADE = 'Upgrade'
 
-    private static readonly WSProtocol = 'Sec-WebSocket-Protocol'
-
-    private static enableMemoryServer = false
-
     static Context = new AsyncLocalStorage<_HTTPContext>()
 
     constructor() {
         Tak.serve()
     }
 
-    static Depends(...dependants: Function[]) {
-
-        return function(cls: Object, funcName: string, propDesc: PropertyDescriptor) {
-
-            const originalFunc: Function = propDesc.value
-    
-            const depends = async () => { for(const func of dependants) await func() }
-            
-            propDesc.value = async function(...args: any[]) {
-    
-                await depends()
-
-                const { websocket } = Tak.Context.getStore()!
-        
-                if(!websocket) return originalFunc.apply(this, args)
-            }
-    
-            propDesc.value.prototype = {
-                ...originalFunc.prototype,
-                depends
-            }
-        }
-    }
-
     private static getHandler() {
 
         const { request } = Tak.Context.getStore()!
 
-        const url = new URL(request.url)
+        const req = request as Request
+
+        const url = new URL(req.url)
 
         let handler = undefined
 
@@ -207,16 +179,38 @@ export default class Tak {
         return data
     }
 
-    private static connect() {
+    private static getLogWriter(path: string, method: string) {
 
-        const port = process.env.LIVE_PORT || 8080
+        let logWriter: FileSink | undefined;
 
-        startRxStorageRemoteWebsocketServer({
-            port,
-            database: getRxStorageMemory()
-        })
+        if(Tak.saveLogs) {
+            const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
+            const dir = `${Tak.logDestination}/${path}/${method}/${date}`
+            if(!existsSync(dir)) mkdirSync(dir, { recursive: true })
+            const file = Bun.file(`${dir}/${crypto.randomUUID()}.txt`)
+            logWriter = file.writer()
+        }
 
-        console.info(`RxDB Server is running on ws://localhost:${port} (Press CTRL+C to quit)`)
+        return logWriter
+    }
+
+    private static async logError(e: Error, url: URL, method: string, logWriter?: FileSink, startTime?: number) {
+
+        const path = url.pathname
+
+        const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
+
+        const dir = `${Tak.heapDestination}/${path}/${method}/${date}`
+
+        if(!existsSync(dir)) mkdirSync(dir, { recursive: true })
+
+        const heapDestination = `${dir}/${crypto.randomUUID()}.json`
+
+        if(logWriter) logWriter.end()
+
+        if(Tak.saveHeaps) await Bun.write(heapDestination, JSON.stringify(generateHeapSnapshot(), null, 2))
+
+        console.error(`"${method} ${path}" ${e.cause as number ?? 500} ${startTime ? `- ${Date.now() - startTime}ms` : ''} - ${e.message.length} byte(s)`)
     }
 
     private static async serve() {
@@ -227,8 +221,6 @@ export default class Tak {
 
         Tak.configLogger()
 
-        if(Tak.enableMemoryServer) Tak.connect()
-
         const server = Bun.serve({ async fetch(req: Request) {
 
             const ipAddress: string = server.requestIP(req)!.address
@@ -236,10 +228,8 @@ export default class Tak {
             const url = new URL(req.url)
 
             if(req.headers.get('Connection') === Tak.UPGRADE && req.headers.get(Tak.UPGRADE) === 'websocket') {
-
-                const method = req.headers.get(Tak.WSProtocol)
                     
-                if(!server.upgrade<_WSContext>(req, { data: { method, request: req, ipAddress }})) throw new Error('WebSocket upgrade error', { cause: 500 })
+                if(!server.upgrade<_WSContext>(req, { data: { request: req, ipAddress }})) throw new Error('WebSocket upgrade error', { cause: 500 })
 
                 console.log('Upgraded to WebSocket!')
                 
@@ -255,17 +245,9 @@ export default class Tak {
                 allowedOrigins: Tak.allowedOrigins
             }
 
-            let logWriter: FileSink | undefined;
+            const logWriter = Tak.getLogWriter(url.pathname, req.method)
 
-            if(Tak.saveLogs) {
-                const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
-                const dir = `${Tak.logDestination}/${url.pathname}/${req.method}/${date}`
-                if(!existsSync(dir)) mkdirSync(dir, { recursive: true })
-                const file = Bun.file(`${dir}/${crypto.randomUUID()}.txt`)
-                logWriter = file.writer()
-            }
-
-            return await Tak.Context.run({ websocket: false, request: req, requestTime: startTime, accessControl, ipAddress, logWriter }, async () => {
+            return await Tak.Context.run({ request: req, requestTime: startTime, accessControl, ipAddress, logWriter }, async () => {
                 
                 let res: Response;
                 
@@ -285,18 +267,9 @@ export default class Tak {
                     }
                     
                     const data = await Tak.processRequest()
-
-                    const channel = req.headers.get('channel')
-
-                    const publish = (msg: string) => server.publish(channel!, msg)
         
-                    if(typeof data === 'object') {
-                        res = Response.json(data, { status: 200 })
-                        if(channel) publish(JSON.stringify(data))
-                    } else {
-                        res = new Response(data, { status: 200 })
-                        if(channel) publish(data)
-                    }
+                    if(typeof data === 'object') res = Response.json(data, { status: 200 })
+                    else res = new Response(data, { status: 200 })
 
                     if(logWriter) logWriter.end()
                 
@@ -304,21 +277,7 @@ export default class Tak {
 
                 } catch(e: any) {
 
-                    const path = url.pathname
-
-                    const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
-
-                    const dir = `${Tak.heapDestination}/${path}/${req.method}/${date}`
-
-                    if(!existsSync(dir)) mkdirSync(dir, { recursive: true })
-
-                    const heapDestination = `${dir}/${crypto.randomUUID()}.json`
-
-                    if(logWriter) logWriter.end()
-
-                    if(Tak.saveHeaps) await Bun.write(heapDestination, JSON.stringify(generateHeapSnapshot(), null, 2))
-
-                    console.error(`"${req.method} ${path}" ${e.cause as number ?? 500} - ${Date.now() - startTime}ms - ${e.message.length} byte(s)`)
+                    await Tak.logError(e, url, req.method, logWriter, startTime)
 
                     res = Response.json({ detail: e.message }, { status: e.cause as number ?? 500 })
                 }
@@ -329,31 +288,37 @@ export default class Tak {
         }, websocket: {
 
             open(ws) {
-                const { request, method } = ws.data as _WSContext
+                const { request } = ws.data as _WSContext
                 const url = new URL(request.url)
-                ws.send(`Successfully connected ${url.pathname} - ${method}`)
+                ws.send(`Connected ${url.pathname}`)
             }, 
             async message(ws, message: string) {
 
-                const headers: Headers = JSON.parse(message)
+                const { ipAddress, request } = ws.data as _WSContext
 
-                const { request, method, ipAddress } = ws.data as _WSContext
+                const req = new Request(request.url, JSON.parse(message))
 
-                if(method === null) throw new Error('Method not provided for WebSocket Connection', { cause: 404 })
+                if(req.method === null) throw new Error('Method not provided for WebSocket Connection', { cause: 404 })
                 
-                await Tak.Context.run({ request, websocket: true, ipAddress }, async () => { 
-                    
-                    const { handler } = Tak.getHandler()
+                const logWriter = Tak.getLogWriter(new URL(req.url).pathname, req.method)
+                
+                await Tak.Context.run({ request: req, ws, ipAddress }, async () => {
 
-                    if(handler.prototype && handler.prototype.depends) await handler.prototype.depends()
+                    try {
+
+                        await Tak.processRequest()
+
+                    } catch(e: any) {
+
+                        await Tak.logError(e, new URL(req.url), req.method, logWriter)
+
+                        ws.close(e.cause as number ?? 500, e.message)
+                    }
                 })
-
-                ws.subscribe(headers.get('channel')!)
             },
             close(ws, code, reason) {
-                const { request, method } = ws.data as _WSContext
-                const url = new URL(request.url)
-                ws.send(`Successfully disconnected from ${url.pathname} - ${method}`)
+                const { request } = ws.data as _WSContext
+                console.warn(`Disconnected from ${new URL(request.url).pathname} - Code: ${code} - Reason: ${reason}`)
             }
 
         }, error(req) {
@@ -382,8 +347,6 @@ export default class Tak {
             this.saveHeaps = config.heap.save
             this.heapDestination = config.heap.path
         }
-
-        if(config.enableMemDB) Tak.enableMemoryServer = config.enableMemDB
     }
 
     private static async validateRoutes() {

@@ -1,8 +1,7 @@
-import { FileSink } from "bun"
+import { FileSink, ServerWebSocket } from "bun"
 
 export interface _WSContext {
     request: Request
-    method: string | null,
     ipAddress: string
 }
 
@@ -14,8 +13,8 @@ export interface _AccessControl {
 }
 
 export interface _HTTPContext {
-    request: Request,
-    websocket: boolean,
+    request: Request
+    ws?: ServerWebSocket<unknown>,
     requestTime?: number,
     accessControl?: _AccessControl
     ipAddress: string,

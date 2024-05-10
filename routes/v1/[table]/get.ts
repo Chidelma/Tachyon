@@ -1,9 +1,8 @@
-import Eon from "../../../Eon"
 import { TEST } from "../../_utils/find"
 
 export default class {
 
-    @Eon.Depends(TEST('admin'))
+    @TEST('admin')
     static GET() {
 
         return {
