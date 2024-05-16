@@ -336,7 +336,7 @@ export default class Tak {
 
         const { ws } = Tak.Context.getStore()!
 
-        ws!.send(JSON.stringify(data))
+        typeof data === "object" ? ws!.send(JSON.stringify(data)) : ws!.send(data)
     }
 
     private static async readConfiguration() {
