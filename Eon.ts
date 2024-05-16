@@ -179,6 +179,25 @@ export default class Tak {
         return data
     }
 
+    private static processResponse(status: number, data?: any) {
+
+        const { request } = Tak.Context.getStore()!
+
+        const accept = request.headers.get('Accept')!
+
+        if(accept.includes('json')) return Response.json(data, { status })
+        
+        if(accept.includes('text')) return new Response(String(data), { status })
+    
+        if(accept.includes('form') && typeof data === "object") {
+            const form = new FormData()
+            for(const key in data) form.set(key, data[key])
+            return new Response(form, { status })
+        }
+    
+        return new Response(data, { status })
+    }
+
     private static getLogWriter(path: string, method: string) {
 
         let logWriter: FileSink | undefined;
@@ -265,15 +284,15 @@ export default class Tak {
                     
                         return res
                     }
-                    
+
                     const data = await Tak.processRequest()
         
-                    if(typeof data === 'object') res = Response.json(data, { status: 200 })
-                    else res = new Response(data, { status: 200 })
+                    res = Tak.processResponse(data)
 
                     if(logWriter) logWriter.end()
                 
                     console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} byte(s)`)
+
 
                 } catch(e: any) {
 
