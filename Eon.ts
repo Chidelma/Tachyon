@@ -302,7 +302,7 @@ export default class Tak {
                 
                 const logWriter = Tak.getLogWriter(new URL(req.url).pathname, req.method)
                 
-                await Tak.Context.run({ request: req, ws, ipAddress }, async () => {
+                await Tak.Context.run({ request: req, ws, ipAddress, stream: Tak.stream }, async () => {
 
                     try {
 
@@ -330,6 +330,13 @@ export default class Tak {
         process.on('SIGINT', () => process.exit(0))
 
         console.info(`Live Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit)`)
+    }
+
+    private static async stream(data: any) {
+
+        const { ws } = Tak.Context.getStore()!
+
+        ws!.send(JSON.stringify(data))
     }
 
     private static async readConfiguration() {

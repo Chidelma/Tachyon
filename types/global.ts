@@ -15,6 +15,7 @@ export interface _AccessControl {
 export interface _HTTPContext {
     request: Request
     ws?: ServerWebSocket<unknown>,
+    stream?: (data: any) => void
     requestTime?: number,
     accessControl?: _AccessControl
     ipAddress: string,
