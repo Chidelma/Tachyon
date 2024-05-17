@@ -19,13 +19,9 @@ export default class Tak {
 
     private static hasMiddleware = false
 
-    private static saveLogs = false
+    private static logDestination = process.env.LOG_PATH
 
-    private static logDestination = ''
-
-    private static saveHeaps = false
-
-    private static heapDestination = ''
+    private static heapDestination = process.env.HEAP_PATH
 
     private static readonly UPGRADE = 'Upgrade'
 
@@ -202,7 +198,7 @@ export default class Tak {
 
         let logWriter: FileSink | undefined;
 
-        if(Tak.saveLogs) {
+        if(Tak.logDestination) {
             const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
             const dir = `${Tak.logDestination}/${path}/${method}/${date}`
             if(!existsSync(dir)) mkdirSync(dir, { recursive: true })
@@ -227,14 +223,12 @@ export default class Tak {
 
         if(logWriter) logWriter.end()
 
-        if(Tak.saveHeaps) await Bun.write(heapDestination, JSON.stringify(generateHeapSnapshot(), null, 2))
+        if(Tak.heapDestination) await Bun.write(heapDestination, JSON.stringify(generateHeapSnapshot(), null, 2))
 
         console.error(`"${method} ${path}" ${e.cause as number ?? 500} ${startTime ? `- ${Date.now() - startTime}ms` : ''} - ${e.message.length} byte(s)`)
     }
 
     private static async serve() {
-
-        await Tak.readConfiguration()
 
         await Tak.validateRoutes()
 
@@ -320,8 +314,8 @@ export default class Tak {
                 if(req.method === null) throw new Error('Method not provided for WebSocket Connection', { cause: 404 })
                 
                 const logWriter = Tak.getLogWriter(new URL(req.url).pathname, req.method)
-                
-                await Tak.Context.run({ request: req, ws, ipAddress, stream: Tak.stream }, async () => {
+
+                await Tak.Context.run({ request: req, subscribe: ws.subscribe, ipAddress, publish: server.publish }, async () => {
 
                     try {
 
@@ -349,30 +343,6 @@ export default class Tak {
         process.on('SIGINT', () => process.exit(0))
 
         console.info(`Live Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit)`)
-    }
-
-    private static async stream(data: any) {
-
-        const { ws } = Tak.Context.getStore()!
-
-        typeof data === "object" ? ws!.send(JSON.stringify(data)) : ws!.send(data)
-    }
-
-    private static async readConfiguration() {
-
-        const config: _config = await Bun.file(`${process.cwd()}/config.json`).json()
-
-        if(config.logging) {
-            if(config.logging.save === undefined || config.logging.path === undefined) throw new Error("Please configuree logging")
-            this.saveLogs = config.logging.save
-            this.logDestination = config.logging.path
-        }
-
-        if(config.heap) {
-            if(config.heap.save === undefined || config.heap.path === undefined) throw new Error("Please configuree heap")
-            this.saveHeaps = config.heap.save
-            this.heapDestination = config.heap.path
-        }
     }
 
     private static async validateRoutes() {

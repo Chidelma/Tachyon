@@ -1,4 +1,4 @@
-import { FileSink, ServerWebSocket } from "bun"
+import { FileSink } from "bun"
 
 export interface _WSContext {
     request: Request
@@ -14,8 +14,8 @@ export interface _AccessControl {
 
 export interface _HTTPContext {
     request: Request
-    ws?: ServerWebSocket<unknown>,
-    stream?: (data: any) => void
+    subscribe?: (topic: string) => void
+    publish?: (topic: string, data: string | ArrayBuffer | SharedArrayBuffer | import("bun").ArrayBufferView, compress?: boolean) => number
     requestTime?: number,
     accessControl?: _AccessControl
     ipAddress: string,
@@ -34,6 +34,5 @@ interface _heap {
 
 export interface _config {
     logging?: _logging,
-    heap?: _heap,
-    enableMemDB?: boolean
+    heap?: _heap
 }
