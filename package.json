@@ -1,17 +1,13 @@
 {
-  "name": "takeeon",
-  "version": "0.0.0",
+  "name": "@vyckr/takeeon",
+  "version": "0.1.0",
+  "exports": "./src/Eon.ts",
   "devDependencies": {
     "@types/node": "^16",
     "bun-types": "^1.0.1"
   },
-  "dependencies": {
-    "pino": "8.17.2",
-    "pino-pretty": "10.3.1"
-  },
   "bin": {
-    "eon": "src/Stahrt.ts",
-    "takeeon": "src/Stahrt.ts"
+    "eon": "./src/Stahrt.ts"
   },
   "type": "module"
 }

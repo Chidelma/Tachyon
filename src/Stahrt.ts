@@ -2,7 +2,7 @@
 import Tak from "./Eon"
 
 try {
-    new Tak()
+    await Tak.serve()
 } catch(e) {
     if(e instanceof Error) console.error(e.message)
 }
