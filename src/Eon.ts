@@ -52,6 +52,28 @@ export default class Tak {
         return slugs
     }
 
+    private static pathsMatch(routeSegs: string[], pathSegs: string[]) {
+
+        let isMatch = true
+
+        if(routeSegs.length === pathSegs.length) {
+
+            const { request } = Tak.Context.getStore()!
+
+            const slugs = Tak.getSlugs(request)
+
+            for(let i = 0; i < routeSegs.length; i++) {
+
+                if(!slugs.has(routeSegs[i]) && routeSegs[i].replace('.ts', '') !== pathSegs[i]) {
+                    isMatch = false
+                    break
+                }
+            }
+        }
+
+        return isMatch
+    }
+
     private static getHandler() {
 
         const { request } = Tak.Context.getStore()!
@@ -62,7 +84,7 @@ export default class Tak {
 
         let params: string[] = []
 
-        const paths = url.pathname.split('/')
+        const paths = url.pathname.split('/').slice(1)
 
         const allowedMethods: string[] = []
 
@@ -70,7 +92,9 @@ export default class Tak {
 
             const idx = paths.findLastIndex((seg) => routeKey.endsWith(`${seg}.ts`))
 
-            if(routeKey.startsWith(paths[1]) && idx > 1) {
+            const isMatch = Tak.pathsMatch(routeKey.split('/'), paths.slice(0, idx + 1))
+
+            if(routeKey.startsWith(paths[0]) && isMatch && idx > 1) {
 
                 handler = routeMap.get(request.method)
 
@@ -86,7 +110,7 @@ export default class Tak {
 
         Tak.headers = {...Tak.headers, "Access-Control-Allow-Methods": allowedMethods.join(',') }
 
-        if(handler === undefined) throw new Error(`Route ${url.pathname} not found`, { cause: 404 })
+        if(handler === undefined) throw new Error(`Route ${request.method} ${url.pathname} not found`, { cause: 404 })
 
         return { handler, params: Tak.parseParams(params) }
     }
@@ -463,7 +487,7 @@ export default class Tak {
                     throw new Error(`Invalid route ${route}`)
                 }
 
-                if(pattern.test(path)) slugs.set(path.replace('[', '').replace(']', ''), idx)
+                if(pattern.test(path)) slugs.set(path, idx)
             })
     
             const idx = paths.findIndex((path) => pattern.test(path))
