@@ -27,7 +27,7 @@ export default class Tak {
 
     private static readonly UPGRADE = 'Upgrade'
 
-    static Context = new AsyncLocalStorage<_HTTPContext>()
+    static Context = new AsyncLocalStorage<FileSink | undefined>()
 
     private static getSlugs(request: Request) {
 
@@ -52,13 +52,11 @@ export default class Tak {
         return slugs
     }
 
-    private static pathsMatch(routeSegs: string[], pathSegs: string[]) {
+    private static pathsMatch(request: Request, routeSegs: string[], pathSegs: string[]) {
 
         let isMatch = true
 
         if(routeSegs.length === pathSegs.length) {
-
-            const { request } = Tak.Context.getStore()!
 
             const slugs = Tak.getSlugs(request)
 
@@ -74,9 +72,7 @@ export default class Tak {
         return isMatch
     }
 
-    private static getHandler() {
-
-        const { request } = Tak.Context.getStore()!
+    private static getHandler(request: Request) {
 
         const url = new URL(request.url)
 
@@ -92,7 +88,7 @@ export default class Tak {
 
             const idx = paths.findLastIndex((seg) => routeKey.endsWith(`${seg}.ts`))
 
-            const isMatch = Tak.pathsMatch(routeKey.split('/'), paths.slice(0, idx + 1))
+            const isMatch = Tak.pathsMatch(request, routeKey.split('/'), paths.slice(0, idx + 1))
 
             if(routeKey.startsWith(paths[0]) && isMatch && idx > 1) {
 
@@ -149,7 +145,7 @@ export default class Tak {
             const info = `[${Tak.formatDate()}]\x1b[32m INFO${reset} (${process.pid}) ${Tak.formatMsg(msg)}`
             logger.log(info)
             if(Tak.Context.getStore()) {
-                const { logWriter } = Tak.Context.getStore()!
+                const logWriter = Tak.Context.getStore()!
                 if(logWriter) logWriter.write(`${info.replace(reset, '').replace('\x1b[32m', '')}\n`)
             }
         }
@@ -158,7 +154,7 @@ export default class Tak {
             const err = `[${Tak.formatDate()}]\x1b[31m ERROR${reset} (${process.pid}) ${Tak.formatMsg(msg)}`
             logger.log(err)
             if(Tak.Context.getStore()) {
-                const { logWriter } = Tak.Context.getStore()!
+                const logWriter = Tak.Context.getStore()
                 if(logWriter) logWriter.write(`${err.replace(reset, '').replace('\x1b[31m', '')}\n`)
             }
         }
@@ -167,7 +163,7 @@ export default class Tak {
             const bug = `[${Tak.formatDate()}]\x1b[36m DEBUG${reset} (${process.pid}) ${Tak.formatMsg(msg)}`
             logger.log(bug)
             if(Tak.Context.getStore()) {
-                const { logWriter } = Tak.Context.getStore()!
+                const logWriter = Tak.Context.getStore()
                 if(logWriter) logWriter.write(`${bug.replace(reset, '').replace('\x1b[36m', '')}\n`)
             }
         }
@@ -176,7 +172,7 @@ export default class Tak {
             const warn = `[${Tak.formatDate()}]\x1b[33m WARN${reset} (${process.pid}) ${Tak.formatMsg(msg)}`
             logger.log(warn)
             if(Tak.Context.getStore()) {
-                const { logWriter } = Tak.Context.getStore()!
+                const logWriter = Tak.Context.getStore()
                 if(logWriter) logWriter.write(`${warn.replace(reset, '').replace('\x1b[33m', '')}\n`)
             }
         }
@@ -185,17 +181,15 @@ export default class Tak {
             const trace = `[${Tak.formatDate()}]\x1b[35m TRACE${reset} (${process.pid}) ${Tak.formatMsg(msg)}`
             logger.log(trace)
             if(Tak.Context.getStore()) {
-                const { logWriter } = Tak.Context.getStore()!
+                const logWriter = Tak.Context.getStore()
                 if(logWriter) logWriter.write(`${trace.replace(reset, '').replace('\x1b[35m', '')}\n`)
             }
         }
     }
 
-    private static async processRequest() {
+    private static async processRequest(request: Request, context: _HTTPContext) {
 
-        const { request } = Tak.Context.getStore()!
-
-        const { handler, params } = Tak.getHandler()
+        const { handler, params } = Tak.getHandler(request)
 
         const body = await request.blob()
 
@@ -225,10 +219,10 @@ export default class Tak {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(...params))
+                return await middleware(async () => handler(...params, context))
             }
 
-            return await handler(...params)
+            return await handler(...params, context)
 
         } else if(params.length === 0 && queryParams && !data) {
 
@@ -236,10 +230,10 @@ export default class Tak {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(queryParams))
+                return await middleware(async () => handler(queryParams, context))
             }
 
-            return await handler(queryParams)
+            return await handler(queryParams, context)
 
         } else if(params.length === 0 && !queryParams && data) {
 
@@ -247,10 +241,10 @@ export default class Tak {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(data))
+                return await middleware(async () => handler(data, context))
             }
 
-            return await handler(data)
+            return await handler(data, context)
 
         } else if(params.length > 0 && queryParams && !data) {
 
@@ -258,10 +252,10 @@ export default class Tak {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(...params, queryParams))
+                return await middleware(async () => handler(...params, queryParams, context))
             }
 
-            return await handler(...params, queryParams)
+            return await handler(...params, queryParams, context)
         
         } else if(params.length > 0 && !queryParams && data) {
 
@@ -269,10 +263,10 @@ export default class Tak {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(...params, data))
+                return await middleware(async () => handler(...params, data, context))
             }
 
-            return await handler(...params, data)
+            return await handler(...params, data, context)
 
         } else if(params.length === 0 && data && queryParams) {
 
@@ -280,10 +274,10 @@ export default class Tak {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(queryParams, data))
+                return await middleware(async () => handler(queryParams, data, context))
             }
 
-            return await handler(queryParams, data)
+            return await handler(queryParams, data, context)
         
         } else if(params.length > 0 && data && queryParams) {
 
@@ -291,10 +285,10 @@ export default class Tak {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(...params, queryParams, data))
+                return await middleware(async () => handler(...params, queryParams, data, context))
             }
 
-            return await handler(...params, queryParams, data)
+            return await handler(...params, queryParams, data, context)
         
         } else {
 
@@ -302,10 +296,10 @@ export default class Tak {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler())
+                return await middleware(async () => handler(context))
             }
 
-            return await handler()
+            return await handler(context)
         }
     }
 
@@ -383,7 +377,7 @@ export default class Tak {
                     
                 if(!server.upgrade<_WSContext>(req, { data: { request: req, ipAddress }})) throw new Error('WebSocket upgrade error', { cause: 500 })
 
-                console.log('Upgraded to WebSocket!')
+                console.info('Upgraded to WebSocket!')
                 
                 return undefined
             }
@@ -392,13 +386,13 @@ export default class Tak {
 
             const logWriter = Tak.getLogWriter(url.pathname, req.method)
 
-            return await Tak.Context.run({ request: req, requestTime: startTime, ipAddress, logWriter, slugs: Tak.getSlugs(req) }, async () => {
-                
+            return await Tak.Context.run(logWriter, async () => {
+
                 let res: Response;
                 
                 try {
 
-                    const data = await Tak.processRequest()
+                    const data = await Tak.processRequest(req, { request: req, requestTime: startTime, ipAddress, publish: server.publish, logWriter, slugs: Tak.getSlugs(req) })
         
                     res = Tak.processResponse(200, data)
 
@@ -433,16 +427,16 @@ export default class Tak {
                 
                 const logWriter = Tak.getLogWriter(new URL(req.url).pathname, req.method)
 
-                await Tak.Context.run({ request: req, subscribe: ws.subscribe, ipAddress, publish: server.publish, slugs: Tak.getSlugs(req) }, async () => {
+                return await Tak.Context.run(logWriter, async () => {
 
                     try {
 
-                        await Tak.processRequest()
-
+                        await Tak.processRequest(req, { request: req, subscribe: ws.subscribe, ipAddress, publish: server.publish, slugs: Tak.getSlugs(req) })
+    
                     } catch(e: any) {
-
+    
                         await Tak.logError(e, new URL(req.url), req.method, logWriter)
-
+    
                         ws.close(e.cause as number ?? 500, e.message)
                     }
                 })
@@ -515,6 +509,7 @@ export default class Tak {
             }
 
             Tak.indexedRoutes.set(route, methodFuncs)
+
             if(slugs.size > 0) Tak.routeSlugs.set(route, slugs)
         }
 

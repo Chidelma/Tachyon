@@ -1,17 +1,13 @@
-import Tak from "../../../src/Eon"
+import { _HTTPContext } from "../../../src/types/general"
 import { TEST } from "../../_utils/find"
 
 export default class {
 
     @TEST('admin')
-    static async GET() {
-
-        const { slugs } = Tak.Context.getStore()!
+    static async GET({ slugs }: _HTTPContext) {
 
         console.info(slugs)
 
-        return {
-            hello: 'world'
-        }
+        return slugs
     }
 }

@@ -8,7 +8,7 @@ export interface _WSContext {
 export interface _HTTPContext {
     request: Request
     subscribe?: (topic: string) => void
-    publish?: (topic: string, data: string | ArrayBuffer | SharedArrayBuffer | import("bun").ArrayBufferView, compress?: boolean) => number
+    publish: (topic: string, data: string | ArrayBuffer | SharedArrayBuffer | import("bun").ArrayBufferView, compress?: boolean) => number
     requestTime?: number,
     ipAddress: string,
     logWriter?: FileSink,
