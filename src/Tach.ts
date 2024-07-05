@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "async_hooks";
 import { _WSContext, _HTTPContext } from "./types/general";
 import { generateHeapSnapshot } from "bun"
 
-export default class Tak {
+export default class Yon {
 
     private static indexedRoutes = new Map<string, Map<string, Function>>()
 
@@ -16,6 +16,8 @@ export default class Tak {
     private static logDestination = process.env.LOG_PATH
 
     private static heapDestination = process.env.HEAP_PATH
+
+    private static hashDestination = process.env.HASH_FILE_PATH
 
     private static headers: HeadersInit = {
         "Access-Control-Allow-Headers": process.env.ALLOW_HEADERS || "",
@@ -37,7 +39,7 @@ export default class Tak {
 
         const paths = url.pathname.split('/')
 
-        for(const [slugKey, slugMap] of Tak.routeSlugs) {
+        for(const [slugKey, slugMap] of this.routeSlugs) {
 
             const idx = paths.findLastIndex((seg) => slugKey.endsWith(`${seg}.ts`))
 
@@ -58,7 +60,7 @@ export default class Tak {
 
         if(routeSegs.length === pathSegs.length) {
 
-            const slugs = Tak.getSlugs(request)
+            const slugs = this.getSlugs(request)
 
             for(let i = 0; i < routeSegs.length; i++) {
 
@@ -84,19 +86,19 @@ export default class Tak {
 
         const allowedMethods: string[] = []
 
-        for(const [routeKey, routeMap] of Tak.indexedRoutes) {
+        for(const [routeKey, routeMap] of this.indexedRoutes) {
 
             const idx = paths.findLastIndex((seg) => routeKey.endsWith(`${seg}.ts`))
 
-            const isMatch = Tak.pathsMatch(request, routeKey.split('/'), paths.slice(0, idx + 1))
+            const isMatch = this.pathsMatch(request, routeKey.split('/'), paths.slice(0, idx + 1))
 
             if(routeKey.startsWith(paths[0]) && isMatch && idx > 1) {
 
                 handler = routeMap.get(request.method)
 
-                routeMap.forEach((_, key) => {
-                    if(Tak.allMethods.includes(key)) allowedMethods.push(key)
-                })
+                for(const [key] of routeMap) {
+                    if(this.allMethods.includes(key)) allowedMethods.push(key)
+                }
 
                 if(paths[idx + 1] !== undefined) params = paths.slice(idx + 1)
                 
@@ -104,11 +106,11 @@ export default class Tak {
             }
         }
 
-        Tak.headers = {...Tak.headers, "Access-Control-Allow-Methods": allowedMethods.join(',') }
+        this.headers = {...this.headers, "Access-Control-Allow-Methods": allowedMethods.join(',') }
 
         if(handler === undefined) throw new Error(`Route ${request.method} ${url.pathname} not found`, { cause: 404 })
 
-        return { handler, params: Tak.parseParams(params) }
+        return { handler, params: this.parseParams(params) }
     }
 
     private static formatDate() {
@@ -142,46 +144,46 @@ export default class Tak {
         const reset = '\x1b[0m'
 
         console.info = (msg) => {
-            const info = `[${Tak.formatDate()}]\x1b[32m INFO${reset} (${process.pid}) ${Tak.formatMsg(msg)}`
+            const info = `[${this.formatDate()}]\x1b[32m INFO${reset} (${process.pid}) ${this.formatMsg(msg)}`
             logger.log(info)
-            if(Tak.Context.getStore()) {
-                const logWriter = Tak.Context.getStore()!
+            if(this.Context.getStore()) {
+                const logWriter = this.Context.getStore()!
                 if(logWriter) logWriter.write(`${info.replace(reset, '').replace('\x1b[32m', '')}\n`)
             }
         }
 
         console.error = (msg) => {
-            const err = `[${Tak.formatDate()}]\x1b[31m ERROR${reset} (${process.pid}) ${Tak.formatMsg(msg)}`
+            const err = `[${this.formatDate()}]\x1b[31m ERROR${reset} (${process.pid}) ${this.formatMsg(msg)}`
             logger.log(err)
-            if(Tak.Context.getStore()) {
-                const logWriter = Tak.Context.getStore()
+            if(this.Context.getStore()) {
+                const logWriter = this.Context.getStore()
                 if(logWriter) logWriter.write(`${err.replace(reset, '').replace('\x1b[31m', '')}\n`)
             }
         }
 
         console.debug = (msg) => {
-            const bug = `[${Tak.formatDate()}]\x1b[36m DEBUG${reset} (${process.pid}) ${Tak.formatMsg(msg)}`
+            const bug = `[${this.formatDate()}]\x1b[36m DEBUG${reset} (${process.pid}) ${this.formatMsg(msg)}`
             logger.log(bug)
-            if(Tak.Context.getStore()) {
-                const logWriter = Tak.Context.getStore()
+            if(this.Context.getStore()) {
+                const logWriter = this.Context.getStore()
                 if(logWriter) logWriter.write(`${bug.replace(reset, '').replace('\x1b[36m', '')}\n`)
             }
         }
 
         console.warn = (msg) => {
-            const warn = `[${Tak.formatDate()}]\x1b[33m WARN${reset} (${process.pid}) ${Tak.formatMsg(msg)}`
+            const warn = `[${this.formatDate()}]\x1b[33m WARN${reset} (${process.pid}) ${this.formatMsg(msg)}`
             logger.log(warn)
-            if(Tak.Context.getStore()) {
-                const logWriter = Tak.Context.getStore()
+            if(this.Context.getStore()) {
+                const logWriter = this.Context.getStore()
                 if(logWriter) logWriter.write(`${warn.replace(reset, '').replace('\x1b[33m', '')}\n`)
             }
         }
 
         console.trace = (msg) => {
-            const trace = `[${Tak.formatDate()}]\x1b[35m TRACE${reset} (${process.pid}) ${Tak.formatMsg(msg)}`
+            const trace = `[${this.formatDate()}]\x1b[35m TRACE${reset} (${process.pid}) ${this.formatMsg(msg)}`
             logger.log(trace)
-            if(Tak.Context.getStore()) {
-                const logWriter = Tak.Context.getStore()
+            if(this.Context.getStore()) {
+                const logWriter = this.Context.getStore()
                 if(logWriter) logWriter.write(`${trace.replace(reset, '').replace('\x1b[35m', '')}\n`)
             }
         }
@@ -189,7 +191,7 @@ export default class Tak {
 
     private static async processRequest(request: Request, context: _HTTPContext) {
 
-        const { handler, params } = Tak.getHandler(request)
+        const { handler, params } = this.getHandler(request)
 
         const body = await request.blob()
 
@@ -197,7 +199,7 @@ export default class Tak {
 
         if(body.size > 0) {
 
-            if(body.type.includes('form')) data = Tak.parseKVParams(await body.formData())
+            if(body.type.includes('form')) data = this.parseKVParams(await body.formData())
             else {
                 try {
                     data = await body.json()
@@ -211,11 +213,11 @@ export default class Tak {
 
         let queryParams: Record<string, any> | undefined;
 
-        if(searchParams.size > 0) queryParams = Tak.parseKVParams(searchParams)
+        if(searchParams.size > 0) queryParams = this.parseKVParams(searchParams)
 
         if(params.length > 0 && !queryParams && !data) {
 
-            if(Tak.hasMiddleware) {
+            if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
@@ -226,7 +228,7 @@ export default class Tak {
 
         } else if(params.length === 0 && queryParams && !data) {
 
-            if(Tak.hasMiddleware) {
+            if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
@@ -237,7 +239,7 @@ export default class Tak {
 
         } else if(params.length === 0 && !queryParams && data) {
 
-            if(Tak.hasMiddleware) {
+            if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
@@ -248,7 +250,7 @@ export default class Tak {
 
         } else if(params.length > 0 && queryParams && !data) {
 
-            if(Tak.hasMiddleware) {
+            if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
@@ -259,7 +261,7 @@ export default class Tak {
         
         } else if(params.length > 0 && !queryParams && data) {
 
-            if(Tak.hasMiddleware) {
+            if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
@@ -270,7 +272,7 @@ export default class Tak {
 
         } else if(params.length === 0 && data && queryParams) {
 
-            if(Tak.hasMiddleware) {
+            if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
@@ -281,7 +283,7 @@ export default class Tak {
         
         } else if(params.length > 0 && data && queryParams) {
 
-            if(Tak.hasMiddleware) {
+            if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
@@ -292,7 +294,7 @@ export default class Tak {
         
         } else {
 
-            if(Tak.hasMiddleware) {
+            if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
@@ -313,7 +315,7 @@ export default class Tak {
 
     private static processResponse(status: number, data?: any) {
 
-        const headers = Tak.headers
+        const headers = this.headers
 
         if(data instanceof Set) return Response.json(Array.from(data), { status, headers }) 
         
@@ -334,9 +336,9 @@ export default class Tak {
 
         let logWriter: FileSink | undefined;
 
-        if(Tak.logDestination) {
+        if(this.logDestination) {
             const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
-            const dir = `${Tak.logDestination}/${date}/${path}/${method}`
+            const dir = `${this.logDestination}/${date}/${path}/${method}`
             const file = Bun.file(`${dir}/${crypto.randomUUID()}.txt`)
             logWriter = file.writer()
         }
@@ -350,22 +352,22 @@ export default class Tak {
 
         const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
 
-        const dir = `${Tak.heapDestination}/${date}/${path}/${method}`
+        const dir = `${this.heapDestination}/${date}/${path}/${method}`
 
         const heapDestination = `${dir}/${crypto.randomUUID()}.json`
 
         if(logWriter) logWriter.end()
 
-        if(Tak.heapDestination) await Bun.write(heapDestination, JSON.stringify(generateHeapSnapshot(), null, 2))
+        if(this.heapDestination) await Bun.write(heapDestination, JSON.stringify(generateHeapSnapshot(), null, 2))
 
         console.error(`"${method} ${path}" ${e.cause as number ?? 500} ${startTime ? `- ${Date.now() - startTime}ms` : ''} - ${e.message.length} byte(s)`)
     }
 
     static async serve() {
 
-        await Tak.validateRoutes()
+        await this.validateRoutes()
 
-        Tak.configLogger()
+        this.configLogger()
 
         const server = Bun.serve({ async fetch(req: Request) {
 
@@ -373,7 +375,7 @@ export default class Tak {
 
             const url = new URL(req.url)
 
-            if(req.headers.get('Connection') === Tak.UPGRADE && req.headers.get(Tak.UPGRADE) === 'websocket') {
+            if(req.headers.get('Connection') === Yon.UPGRADE && req.headers.get(Yon.UPGRADE) === 'websocket') {
                     
                 if(!server.upgrade<_WSContext>(req, { data: { request: req, ipAddress }})) throw new Error('WebSocket upgrade error', { cause: 500 })
 
@@ -384,27 +386,27 @@ export default class Tak {
             
             const startTime = Date.now()
 
-            const logWriter = Tak.getLogWriter(url.pathname, req.method)
+            const logWriter = Yon.getLogWriter(url.pathname, req.method)
 
-            return await Tak.Context.run(logWriter, async () => {
+            return await Yon.Context.run(logWriter, async () => {
 
                 let res: Response;
                 
                 try {
 
-                    const data = await Tak.processRequest(req, { request: req, requestTime: startTime, ipAddress, publish: server.publish, logWriter, slugs: Tak.getSlugs(req) })
+                    const data = await Yon.processRequest(req, { request: req, requestTime: startTime, ipAddress, publish: server.publish, logWriter, slugs: Yon.getSlugs(req) })
         
-                    res = Tak.processResponse(200, data)
+                    res = Yon.processResponse(200, data)
 
                     if(logWriter) logWriter.end()
                 
-                    if(!Tak.isAsyncIterator(data)) console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} byte(s)`)
+                    if(!Yon.isAsyncIterator(data)) console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} byte(s)`)
 
                 } catch(e: any) {
 
-                    await Tak.logError(e, url, req.method, logWriter, startTime)
+                    await Yon.logError(e, url, req.method, logWriter, startTime)
 
-                    res = Response.json({ detail: e.message }, { status: e.cause as number ?? 500, headers: Tak.headers })
+                    res = Response.json({ detail: e.message }, { status: e.cause as number ?? 500, headers: Yon.headers })
                 }
                 
                 return res
@@ -425,17 +427,17 @@ export default class Tak {
 
                 if(req.method === null) throw new Error('Method not provided for WebSocket Connection', { cause: 404 })
                 
-                const logWriter = Tak.getLogWriter(new URL(req.url).pathname, req.method)
+                const logWriter = Yon.getLogWriter(new URL(req.url).pathname, req.method)
 
-                return await Tak.Context.run(logWriter, async () => {
+                return await Yon.Context.run(logWriter, async () => {
 
                     try {
 
-                        await Tak.processRequest(req, { request: req, subscribe: ws.subscribe, ipAddress, publish: server.publish, slugs: Tak.getSlugs(req) })
+                        await Yon.processRequest(req, { request: req, subscribe: ws.subscribe, ipAddress, publish: server.publish, slugs: Yon.getSlugs(req) })
     
                     } catch(e: any) {
     
-                        await Tak.logError(e, new URL(req.url), req.method, logWriter)
+                        await Yon.logError(e, new URL(req.url), req.method, logWriter)
     
                         ws.close(e.cause as number ?? 500, e.message)
                     }
@@ -461,7 +463,7 @@ export default class Tak {
 
         const files = (await Array.fromAsync(new Glob(`**/*.{ts,js}`).scan({ cwd: './routes' })))
 
-        Tak.hasMiddleware = files.some((file) => file.includes('_middleware'))
+        this.hasMiddleware = files.some((file) => file.includes('_middleware'))
 
         const routes = files.filter((route) => !route.split('/').some((path) => path.startsWith('_')))
 
@@ -500,7 +502,7 @@ export default class Tak {
 
             const methodFuncs = new Map<string, Function>()
 
-            for(const method of Tak.allMethods) {
+            for(const method of this.allMethods) {
 
                 if(controller[method]) {
 
@@ -508,12 +510,12 @@ export default class Tak {
                 }
             }
 
-            Tak.indexedRoutes.set(route, methodFuncs)
+            this.indexedRoutes.set(route, methodFuncs)
 
-            if(slugs.size > 0) Tak.routeSlugs.set(route, slugs)
+            if(slugs.size > 0) this.routeSlugs.set(route, slugs)
         }
 
-        return Tak.indexedRoutes
+        if(this.hashDestination) this.hashRoutes()
     }
 
     private static parseParams(input: string[]) {
@@ -542,7 +544,7 @@ export default class Tak {
 
         const params: Record<string, any> = {}
 
-        input.forEach((val, key) => {
+        for(const [key, val] of input) {
 
             const num = Number(val)
 
@@ -557,8 +559,22 @@ export default class Tak {
             else if(val === 'null') params[key] = null
 
             if(params[key] === undefined) params[key] = val
-        })
+        }
 
         return params
+    }
+    
+    private static async hashRoutes() {
+
+        const hashedRoutes: Record<string, string> = {}
+
+        for(const [route] of this.indexedRoutes) {
+            
+            const file = await Bun.file(`${process.cwd()}/routes/${route}`).text()
+
+            hashedRoutes[route] = Bun.hash(file).toString()
+        }
+
+        await Bun.write(`${process.cwd()}/${this.hashDestination}`, JSON.stringify(hashedRoutes, null, 2))
     }
 }

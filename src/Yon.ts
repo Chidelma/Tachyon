@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import Tak from "./Eon"
+import Tach from "./Tach"
 
 try {
-    await Tak.serve()
+    await Tach.serve()
 } catch(e) {
     if(e instanceof Error) console.error(e.message)
 }
