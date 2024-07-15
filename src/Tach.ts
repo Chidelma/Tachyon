@@ -1,7 +1,7 @@
 import { FileSink, Glob } from "bun";
 import { AsyncLocalStorage } from "async_hooks";
-import { _WSContext, _HTTPContext } from "./types/general";
 import { generateHeapSnapshot } from "bun"
+import { _HTTPContext, _WSContext } from "../types";
 
 export default class Yon {
 

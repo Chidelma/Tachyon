@@ -1,4 +1,4 @@
-import { _HTTPContext } from "../../../src/types/general"
+import { _HTTPContext } from "../../../types"
 import { TEST } from "../../_utils/find"
 
 export default class {
