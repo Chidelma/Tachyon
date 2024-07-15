@@ -1,10 +1,14 @@
 {
   "name": "@delma/tachyon",
   "version": "0.1.0",
-  "types": "./types/index.d.ts",
   "devDependencies": {
     "@types/node": "^16",
     "bun-types": "^1.0.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts"
+    }
   },
   "bin": {
     "tach": "./src/Yon.ts"
