@@ -546,19 +546,30 @@ export default class Yon {
 
         for(const [key, val] of input) {
 
-            const num = Number(val)
+            if(typeof val === "string") {
 
-            if(!Number.isNaN(num)) params[key] = num
+                try {
 
-            else if(val === 'true') params[key] = true
+                    params[key] = JSON.parse(val)
+    
+                } catch {
+    
+                    const num = Number(val)
+    
+                    if(!Number.isNaN(num)) params[key] = num
+    
+                    else if(val === 'true') params[key] = true
+    
+                    else if(val === 'false') params[key] = false
+    
+                    else if(typeof val === "string" && val.includes(',')) params[key] = this.parseParams(val.split(','))
+    
+                    else if(val === 'null') params[key] = null
+    
+                    if(params[key] === undefined) params[key] = val
+                }
 
-            else if(val === 'false') params[key] = false
-
-            else if(typeof val === "string" && val.includes(',')) params[key] = this.parseParams(val.split(','))
-
-            else if(val === 'null') params[key] = null
-
-            if(params[key] === undefined) params[key] = val
+            } else params[key] = val
         }
 
         return params
