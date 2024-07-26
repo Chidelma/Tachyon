@@ -2,6 +2,7 @@ import { FileSink, Glob } from "bun";
 import { AsyncLocalStorage } from "async_hooks";
 import { generateHeapSnapshot } from "bun"
 import { _HTTPContext, _WSContext } from "../types";
+import { existsSync } from "fs";
 
 export default class Yon {
 
@@ -11,7 +12,7 @@ export default class Yon {
 
     private static allMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 
-    private static hasMiddleware = false
+    private static hasMiddleware = existsSync(`${process.cwd()}/routes/_middleware.ts`)
 
     private static logDestination = process.env.LOG_PATH
 
@@ -56,61 +57,59 @@ export default class Yon {
 
     private static pathsMatch(request: Request, routeSegs: string[], pathSegs: string[]) {
 
-        let isMatch = true
-
-        if(routeSegs.length === pathSegs.length) {
-
-            const slugs = this.getSlugs(request)
-
-            for(let i = 0; i < routeSegs.length; i++) {
-
-                if(!slugs.has(routeSegs[i]) && routeSegs[i].replace('.ts', '') !== pathSegs[i]) {
-                    isMatch = false
-                    break
-                }
+        if (routeSegs.length !== pathSegs.length) {
+            return false;
+        }
+    
+        const slugs = this.getSlugs(request);
+    
+        for (let i = 0; i < routeSegs.length; i++) {
+            if (!slugs.has(routeSegs[i]) && routeSegs[i].replace('.ts', '') !== pathSegs[i]) {
+                return false;
             }
         }
-
-        return isMatch
+    
+        return true;
     }
 
     private static getHandler(request: Request) {
 
-        const url = new URL(request.url)
+        const url = new URL(request.url);
 
-        let handler = undefined
+        let handler;
+        let params: string[] = [];
+        const paths = url.pathname.split('/').slice(1);
+        const allowedMethods: string[] = [];
 
-        let params: string[] = []
+        let bestMatchKey = '';
+        let bestMatchLength = -1;
 
-        const paths = url.pathname.split('/').slice(1)
+        for (const [routeKey, routeMap] of this.indexedRoutes) {
+            const routeSegs = routeKey.split('/').map(seg => seg.replace('.ts', ''));
+            const isMatch = this.pathsMatch(request, routeSegs, paths.slice(0, routeSegs.length));
 
-        const allowedMethods: string[] = []
-
-        for(const [routeKey, routeMap] of this.indexedRoutes) {
-
-            const idx = paths.findLastIndex((seg) => routeKey.endsWith(`${seg}.ts`))
-
-            const isMatch = this.pathsMatch(request, routeKey.split('/'), paths.slice(0, idx + 1))
-
-            if(routeKey.startsWith(paths[0]) && isMatch && idx > 1) {
-
-                handler = routeMap.get(request.method)
-
-                for(const [key] of routeMap) {
-                    if(this.allMethods.includes(key)) allowedMethods.push(key)
-                }
-
-                if(paths[idx + 1] !== undefined) params = paths.slice(idx + 1)
-                
-                break
+            if (isMatch && routeSegs.length > bestMatchLength) {
+                bestMatchKey = routeKey;
+                bestMatchLength = routeSegs.length;
             }
         }
 
-        this.headers = {...this.headers, "Access-Control-Allow-Methods": allowedMethods.join(',') }
+        if (bestMatchKey) {
+            const routeMap = this.indexedRoutes.get(bestMatchKey)!
+            handler = routeMap.get(request.method);
 
-        if(handler === undefined) throw new Error(`Route ${request.method} ${url.pathname} not found`, { cause: 404 })
+            for (const [key] of routeMap) {
+                if (this.allMethods.includes(key)) allowedMethods.push(key);
+            }
 
-        return { handler, params: this.parseParams(params) }
+            params = paths.slice(bestMatchLength);
+        }
+
+        this.headers = { ...this.headers, "Access-Control-Allow-Methods": allowedMethods.join(',') };
+
+        if (!handler) throw new Error(`Route ${request.method} ${url.pathname} not found`, { cause: 404 });
+
+        return { handler, params: this.parseParams(params) };
     }
 
     private static formatDate() {
@@ -462,8 +461,6 @@ export default class Yon {
     static async validateRoutes() {
 
         const files = (await Array.fromAsync(new Glob(`**/*.{ts,js}`).scan({ cwd: './routes' })))
-
-        this.hasMiddleware = files.some((file) => file.includes('_middleware'))
 
         const routes = files.filter((route) => !route.split('/').some((path) => path.startsWith('_')))
 
