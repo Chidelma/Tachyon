@@ -32,36 +32,13 @@ export default class Yon {
 
     static Context = new AsyncLocalStorage<FileSink | undefined>()
 
-    private static getSlugs(request: Request) {
-
-        const slugs = new Map<string, any>()
-
-        const url = new URL(request.url)
-
-        const paths = url.pathname.split('/')
-
-        for(const [slugKey, slugMap] of this.routeSlugs) {
-
-            const idx = paths.findLastIndex((seg) => slugKey.endsWith(`${seg}.ts`))
-
-            if(slugKey.startsWith(paths[1]) && idx > -1) {
-
-                slugMap.forEach((idx, key) => slugs.set(key, paths[idx + 1]))
-                
-                break
-            }
-        }
-
-        return slugs
-    }
-
     private static pathsMatch(request: Request, routeSegs: string[], pathSegs: string[]) {
 
         if (routeSegs.length !== pathSegs.length) {
             return false;
         }
     
-        const slugs = this.getSlugs(request);
+        const slugs = this.routeSlugs.get(`${routeSegs.join('/')}.ts`) ?? new Map<string, number>()
     
         for (let i = 0; i < routeSegs.length; i++) {
             if (!slugs.has(routeSegs[i]) && routeSegs[i].replace('.ts', '') !== pathSegs[i]) {
@@ -81,10 +58,12 @@ export default class Yon {
         const paths = url.pathname.split('/').slice(1);
         const allowedMethods: string[] = [];
 
+        let slugs = new Map<string, string>()
+
         let bestMatchKey = '';
         let bestMatchLength = -1;
 
-        for (const [routeKey, routeMap] of this.indexedRoutes) {
+        for (const [routeKey] of this.indexedRoutes) {
             const routeSegs = routeKey.split('/').map(seg => seg.replace('.ts', ''));
             const isMatch = this.pathsMatch(request, routeSegs, paths.slice(0, routeSegs.length));
 
@@ -103,13 +82,17 @@ export default class Yon {
             }
 
             params = paths.slice(bestMatchLength);
+
+            const slugMap = this.routeSlugs.get(bestMatchKey) ?? new Map<string, number>()
+
+            slugMap.forEach((idx, key) => slugs.set(key, paths[idx]))
         }
 
         this.headers = { ...this.headers, "Access-Control-Allow-Methods": allowedMethods.join(',') };
 
         if (!handler) throw new Error(`Route ${request.method} ${url.pathname} not found`, { cause: 404 });
 
-        return { handler, params: this.parseParams(params) };
+        return { handler, params: this.parseParams(params), slugs }
     }
 
     private static formatDate() {
@@ -190,7 +173,9 @@ export default class Yon {
 
     private static async processRequest(request: Request, context: _HTTPContext) {
 
-        const { handler, params } = this.getHandler(request)
+        const { handler, params, slugs } = this.getHandler(request)
+
+        if(slugs.size > 0) context.slugs = slugs
 
         const body = await request.blob()
 
@@ -393,7 +378,7 @@ export default class Yon {
                 
                 try {
 
-                    const data = await Yon.processRequest(req, { request: req, requestTime: startTime, ipAddress, publish: server.publish, logWriter, slugs: Yon.getSlugs(req) })
+                    const data = await Yon.processRequest(req, { request: req, requestTime: startTime, ipAddress, publish: server.publish, logWriter })
         
                     res = Yon.processResponse(200, data)
 
@@ -432,7 +417,7 @@ export default class Yon {
 
                     try {
 
-                        await Yon.processRequest(req, { request: req, subscribe: ws.subscribe, ipAddress, publish: server.publish, slugs: Yon.getSlugs(req) })
+                        await Yon.processRequest(req, { request: req, subscribe: ws.subscribe, ipAddress, publish: server.publish })
     
                     } catch(e: any) {
     
