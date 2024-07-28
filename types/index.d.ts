@@ -12,5 +12,5 @@ interface _HTTPContext {
     requestTime?: number,
     ipAddress: string,
     logWriter?: FileSink,
-    slugs?: Map<string, any>
+    slugs: Map<string, any>
 }

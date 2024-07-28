@@ -378,7 +378,7 @@ export default class Yon {
                 
                 try {
 
-                    const data = await Yon.processRequest(req, { request: req, requestTime: startTime, ipAddress, publish: server.publish, logWriter })
+                    const data = await Yon.processRequest(req, { request: req, requestTime: startTime, ipAddress, publish: server.publish, logWriter, slugs: new Map<string, any>() })
         
                     res = Yon.processResponse(200, data)
 
@@ -417,7 +417,7 @@ export default class Yon {
 
                     try {
 
-                        await Yon.processRequest(req, { request: req, subscribe: ws.subscribe, ipAddress, publish: server.publish })
+                        await Yon.processRequest(req, { request: req, subscribe: ws.subscribe, ipAddress, publish: server.publish, slugs: new Map<string, any>() })
     
                     } catch(e: any) {
     
