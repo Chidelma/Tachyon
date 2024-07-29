@@ -24,8 +24,8 @@ export default class Yon {
     }
 
     private static readonly logsTableName = "_logs"
-
     private static readonly heapsTableName = "_heaps"
+    private static readonly requestTableName = "_requests"
 
     private static readonly UPGRADE = 'Upgrade'
 
@@ -320,10 +320,10 @@ export default class Yon {
         const path = url.pathname
 
         if(logs.length > 0) await Promise.all(logs.map(log => { 
-                                return Silo.putData(Yon.logsTableName, { ipAddress, path: url.pathname, method, ...log })
+                                return Silo.putData(Yon.logsTableName, { ipAddress, path, method, ...log })
                             }))
 
-        if(process.env.DATA_PREFIX) await Silo.putData(Yon.heapsTableName, { ...generateHeapSnapshot(), date: Date.now(), ipAddress, path, method })
+        if(process.env.DATA_PREFIX) await Silo.putData(Yon.heapsTableName, { ...generateHeapSnapshot(), date: Date.now(), ipAddress, path, method, error: e.message })
 
         console.error(`"${method} ${path}" ${e.cause as number ?? 500} ${startTime ? `- ${Date.now() - startTime}ms` : ''} - ${e.message.length} byte(s)`)
     }
@@ -367,13 +367,42 @@ export default class Yon {
                                             return Silo.putData("logs", { ipAddress, path: url.pathname, method: req.method, ...log })
                                         }))
                 
-                    if(!Yon.isAsyncIterator(data)) console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} byte(s)`)
+                    if(!Yon.isAsyncIterator(data)) {
+
+                        const status = res.status
+                        const request_size = req.body ? req.body.length : 0
+                        const response_size = res.body ? res.body.length : 0
+                        const url = new URL(req.url)
+                        const method = req.method
+                        const date = Date.now()
+                        const duration = date - startTime
+                        
+                        if(process.env.DATA_PREFIX) {
+                            const request_data = req.body ? await req.text() : null
+                            await Silo.putData(Yon.requestTableName, { ipAddress, url: `${url.pathname}${url.search}`, method, status, duration, date, request_size, response_size, request_data })
+                        }
+                        
+                        console.info(`"${method} ${url.pathname}" ${status} - ${duration}ms - ${response_size} byte(s)`)
+                    }
 
                 } catch(e: any) {
 
-                    await Yon.logError(e, ipAddress, url, req.method, logs, startTime)
-
                     res = Response.json({ detail: e.message }, { status: e.cause as number ?? 500, headers: Yon.headers })
+
+                    const status = res.status
+                    const request_size = req.body ? req.body.length : 0
+                    const response_size = res.body ? res.body.length : 0
+                    const url = new URL(req.url)
+                    const method = req.method
+                    const date = Date.now()
+                    const duration = date - startTime
+
+                    await Yon.logError(e, ipAddress, url, method, logs, startTime)
+
+                    if(process.env.DATA_PREFIX) {
+                        const request_data = req.body ? await req.text() : null
+                        await Silo.putData(Yon.requestTableName, { ipAddress, url: `${url.pathname}${url.search}`, method, status, duration, date, request_size, response_size, request_data })
+                    }
                 }
                 
                 return res

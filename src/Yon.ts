@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import Tach from "./Tach"
+import Tach from "./Tach.js"
 
 try {
     await Tach.serve()
