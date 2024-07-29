@@ -416,7 +416,7 @@ export default class Yon {
                     res = Yon.processResponse(200, data)
 
                     if(logs.length > 0) await Promise.all(logs.map(log => { 
-                                            return Silo.putData("logs", { ipAddress, path: url.pathname, method: req.method, ...log })
+                                            return Silo.putData(Yon.logsTableName, { ipAddress, path: url.pathname, method: req.method, ...log })
                                         }))
                 
                     if(!Yon.isAsyncIterator(data)) {
