@@ -170,7 +170,7 @@ export default class Yon {
         }
     }
 
-    private static async logRequest(request: Request, status: number, context: _HTTPContext, data?: any) {
+    private static async logRequest(request: Request, status: number, context: _HTTPContext, data: any = null) {
 
         if(process.env.DATA_PREFIX) {
 
