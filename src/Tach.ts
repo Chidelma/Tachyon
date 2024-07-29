@@ -370,14 +370,13 @@ export default class Yon {
                     if(!Yon.isAsyncIterator(data)) {
 
                         const clonedRes = res.clone()
-                        const clonedReq = req.clone()
 
-                        const blob = await clonedReq.blob()
+                        const blob = await req.blob()
                         const status = clonedRes.status
                         const request_size = blob.size > 0 ? blob.size : 0
                         const response_size = typeof data !== "undefined" ? String(data).length : 0
-                        const url = new URL(clonedReq.url)
-                        const method = clonedReq.method
+                        const url = new URL(req.url)
+                        const method = req.method
                         const date = Date.now()
                         const duration = date - startTime
                         
@@ -394,14 +393,13 @@ export default class Yon {
                     res = Response.json({ detail: e.message }, { status: e.cause as number ?? 500, headers: Yon.headers })
 
                     const clonedRes = res.clone()
-                    const clonedReq = req.clone()
                     
-                    const blob = await clonedReq.blob()
+                    const blob = await req.blob()
                     const status = clonedRes.status
                     const request_size = blob.size > 0 ? blob.size : 0
                     const response_size = String({ detail: e.message }).length
-                    const url = new URL(clonedReq.url)
-                    const method = clonedReq.method
+                    const url = new URL(req.url)
+                    const method = req.method
                     const date = Date.now()
                     const duration = date - startTime
 
