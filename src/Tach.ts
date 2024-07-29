@@ -369,16 +369,19 @@ export default class Yon {
                 
                     if(!Yon.isAsyncIterator(data)) {
 
-                        const status = res.status
-                        const request_size = req.body ? req.body.length : 0
-                        const response_size = res.body ? res.body.length : 0
-                        const url = new URL(req.url)
-                        const method = req.method
+                        const clonedRes = res.clone()
+                        const clonedReq = req.clone()
+
+                        const status = clonedRes.status
+                        const request_size = clonedReq.body ? clonedReq.body.length : 0
+                        const response_size = clonedRes.body ? clonedRes.body.length : 0
+                        const url = new URL(clonedReq.url)
+                        const method = clonedReq.method
                         const date = Date.now()
                         const duration = date - startTime
                         
                         if(process.env.DATA_PREFIX) {
-                            const request_data = req.body ? await req.text() : null
+                            const request_data = clonedReq.body ? await clonedReq.text() : null
                             await Silo.putData(Yon.requestTableName, { ipAddress, url: `${url.pathname}${url.search}`, method, status, duration, date, request_size, response_size, request_data })
                         }
                         
@@ -389,18 +392,21 @@ export default class Yon {
 
                     res = Response.json({ detail: e.message }, { status: e.cause as number ?? 500, headers: Yon.headers })
 
-                    const status = res.status
-                    const request_size = req.body ? req.body.length : 0
-                    const response_size = res.body ? res.body.length : 0
-                    const url = new URL(req.url)
-                    const method = req.method
+                    const clonedRes = res.clone()
+                    const clonedReq = req.clone()
+                    
+                    const status = clonedRes.status
+                    const request_size = clonedReq.body ? clonedReq.body.length : 0
+                    const response_size = clonedRes.body ? clonedRes.body.length : 0
+                    const url = new URL(clonedReq.url)
+                    const method = clonedReq.method
                     const date = Date.now()
                     const duration = date - startTime
 
                     await Yon.logError(e, ipAddress, url, method, logs, startTime)
 
                     if(process.env.DATA_PREFIX) {
-                        const request_data = req.body ? await req.text() : null
+                        const request_data = clonedReq.body ? await clonedReq.text() : null
                         await Silo.putData(Yon.requestTableName, { ipAddress, url: `${url.pathname}${url.search}`, method, status, duration, date, request_size, response_size, request_data })
                     }
                 }
