@@ -170,6 +170,18 @@ export default class Yon {
         }
     }
 
+    private static async logRequest(request: Request, status: number, context: _HTTPContext, data?: any) {
+
+        if(process.env.DATA_PREFIX) {
+
+            const url = new URL(request.url)
+            const date = Date.now()
+            const duration = date - (context.requestTime ?? 0)
+
+            await Silo.putData(Yon.requestTableName, { ipAddress: context.ipAddress, url: `${url.pathname}${url.search}`, method: request.method, status, duration, date, size: data ? String(data).length : 0, data })
+        }
+    }
+
     private static async processRequest(request: Request, context: _HTTPContext) {
 
         const { handler, params, slugs } = this.getHandler(request)
@@ -200,91 +212,131 @@ export default class Yon {
 
         if(params.length > 0 && !queryParams && !data) {
 
+            let res = undefined
+
             if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(...params, context))
-            }
+                res = await middleware(async () => handler(...params, context))
+            
+            } else res = await handler(...params, context)
 
-            return await handler(...params, context)
+            await this.logRequest(request, 200, context)
+
+            return res
 
         } else if(params.length === 0 && queryParams && !data) {
 
+            let res = undefined
+
             if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(queryParams, context))
-            }
+                res = await middleware(async () => handler(queryParams, context))
+            
+            } else res = await handler(queryParams, context)
 
-            return await handler(queryParams, context)
+            await this.logRequest(request, 200, context)
+
+            return res
 
         } else if(params.length === 0 && !queryParams && data) {
 
+            let res = undefined
+
             if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(data, context))
-            }
+                res = await middleware(async () => handler(data, context))
 
-            return await handler(data, context)
+            } else res = await handler(data, context)
+
+            await this.logRequest(request, 200, context, await body.text())
+
+            return res
 
         } else if(params.length > 0 && queryParams && !data) {
 
+            let res = undefined
+
             if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(...params, queryParams, context))
-            }
+                res = await middleware(async () => handler(...params, queryParams, context))
+            
+            } else res = await handler(...params, queryParams, context)
 
-            return await handler(...params, queryParams, context)
+            await this.logRequest(request, 200, context)
+
+            return res
         
         } else if(params.length > 0 && !queryParams && data) {
 
+            let res = undefined
+
             if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(...params, data, context))
-            }
+                res = await middleware(async () => handler(...params, data, context))
+            
+            } else res = await handler(...params, data, context)
 
-            return await handler(...params, data, context)
+            await this.logRequest(request, 200, context, await body.text())
+
+            return res
 
         } else if(params.length === 0 && data && queryParams) {
 
+            let res = undefined
+
             if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(queryParams, data, context))
-            }
+                res = await middleware(async () => handler(queryParams, data, context))
+            
+            } else res = await handler(queryParams, data, context)
 
-            return await handler(queryParams, data, context)
+            await this.logRequest(request, 200, context, await body.text())
+
+            return res
         
         } else if(params.length > 0 && data && queryParams) {
 
+            let res = undefined
+
             if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(...params, queryParams, data, context))
-            }
+                res = await middleware(async () => handler(...params, queryParams, data, context))
+            
+            } else res = await handler(...params, queryParams, data, context)
 
-            return await handler(...params, queryParams, data, context)
+            await this.logRequest(request, 200, context, await body.text())
+
+            return res
         
         } else {
 
+            let res = undefined
+
             if(this.hasMiddleware) {
 
                 const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
 
-                return await middleware(async () => handler(context))
-            }
+                res = await middleware(async () => handler(context))
+            
+            } else res = await handler(context)
 
-            return await handler(context)
+            await this.logRequest(request, 200, context)
+
+            return res
         }
     }
 
@@ -356,8 +408,6 @@ export default class Yon {
             return await Yon.Context.run(logs, async () => {
 
                 let res: Response;
-
-                const blob = await req.clone().blob()
                 
                 try {
 
@@ -371,21 +421,12 @@ export default class Yon {
                 
                     if(!Yon.isAsyncIterator(data)) {
 
-                        const clonedRes = res.clone()
-
-                        const status = clonedRes.status
-                        const request_size = blob.length
+                        const status = res.status
                         const response_size = typeof data !== "undefined" ? String(data).length : 0
                         const url = new URL(req.url)
                         const method = req.method
                         const date = Date.now()
                         const duration = date - startTime
-                        
-                        if(process.env.DATA_PREFIX) {
-                            const request_data = request_size > 0 ? await blob.text() : null
-                            console.log(request_data)
-                            await Silo.putData(Yon.requestTableName, { ipAddress, url: `${url.pathname}${url.search}`, method, status, duration, date, request_size, response_size, request_data })
-                        }
                         
                         console.info(`"${method} ${url.pathname}" ${status} - ${duration}ms - ${response_size} byte(s)`)
                     }
@@ -393,23 +434,11 @@ export default class Yon {
                 } catch(e: any) {
 
                     res = Response.json({ detail: e.message }, { status: e.cause as number ?? 500, headers: Yon.headers })
-
-                    const clonedRes = res.clone()
                     
-                    const status = clonedRes.status
-                    const request_size = blob.length
-                    const response_size = String({ detail: e.message }).length
                     const url = new URL(req.url)
                     const method = req.method
-                    const date = Date.now()
-                    const duration = date - startTime
 
                     await Yon.logError(e, ipAddress, url, method, logs, startTime)
-
-                    if(process.env.DATA_PREFIX) {
-                        const request_data = request_size > 0 ? await blob.text() : null
-                        await Silo.putData(Yon.requestTableName, { ipAddress, url: `${url.pathname}${url.search}`, method, status, duration, date, request_size, response_size, request_data })
-                    }
                 }
                 
                 return res
