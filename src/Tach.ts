@@ -356,6 +356,8 @@ export default class Yon {
             return await Yon.Context.run(logs, async () => {
 
                 let res: Response;
+
+                const clonedReq = req.clone()
                 
                 try {
 
@@ -371,7 +373,7 @@ export default class Yon {
 
                         const clonedRes = res.clone()
 
-                        const blob = await req.blob()
+                        const blob = await clonedReq.blob()
                         const status = clonedRes.status
                         const request_size = blob.size > 0 ? blob.size : 0
                         const response_size = typeof data !== "undefined" ? String(data).length : 0
@@ -394,7 +396,7 @@ export default class Yon {
 
                     const clonedRes = res.clone()
                     
-                    const blob = await req.blob()
+                    const blob = await clonedReq.blob()
                     const status = clonedRes.status
                     const request_size = blob.size > 0 ? blob.size : 0
                     const response_size = String({ detail: e.message }).length
