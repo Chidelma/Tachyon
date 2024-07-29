@@ -357,7 +357,7 @@ export default class Yon {
 
                 let res: Response;
 
-                const clonedReq = req.clone()
+                const request_data = await req.clone().text()
                 
                 try {
 
@@ -373,7 +373,6 @@ export default class Yon {
 
                         const clonedRes = res.clone()
 
-                        const request_data = await clonedReq.text()
                         const status = clonedRes.status
                         const request_size = request_data.length
                         const response_size = typeof data !== "undefined" ? String(data).length : 0
@@ -395,7 +394,6 @@ export default class Yon {
 
                     const clonedRes = res.clone()
                     
-                    const request_data = await clonedReq.text()
                     const status = clonedRes.status
                     const request_size = request_data.length
                     const response_size = String({ detail: e.message }).length
