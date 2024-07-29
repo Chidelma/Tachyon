@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+
 import Tach from "./Tach.js"
 
 try {

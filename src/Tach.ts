@@ -357,7 +357,7 @@ export default class Yon {
 
                 let res: Response;
 
-                const request_data = await req.clone().text()
+                const blob = await req.clone().blob()
                 
                 try {
 
@@ -374,7 +374,7 @@ export default class Yon {
                         const clonedRes = res.clone()
 
                         const status = clonedRes.status
-                        const request_size = request_data.length
+                        const request_size = blob.length
                         const response_size = typeof data !== "undefined" ? String(data).length : 0
                         const url = new URL(req.url)
                         const method = req.method
@@ -382,6 +382,8 @@ export default class Yon {
                         const duration = date - startTime
                         
                         if(process.env.DATA_PREFIX) {
+                            const request_data = request_size > 0 ? await blob.text() : null
+                            console.log(request_data)
                             await Silo.putData(Yon.requestTableName, { ipAddress, url: `${url.pathname}${url.search}`, method, status, duration, date, request_size, response_size, request_data })
                         }
                         
@@ -395,7 +397,7 @@ export default class Yon {
                     const clonedRes = res.clone()
                     
                     const status = clonedRes.status
-                    const request_size = request_data.length
+                    const request_size = blob.length
                     const response_size = String({ detail: e.message }).length
                     const url = new URL(req.url)
                     const method = req.method
@@ -405,6 +407,7 @@ export default class Yon {
                     await Yon.logError(e, ipAddress, url, method, logs, startTime)
 
                     if(process.env.DATA_PREFIX) {
+                        const request_data = request_size > 0 ? await blob.text() : null
                         await Silo.putData(Yon.requestTableName, { ipAddress, url: `${url.pathname}${url.search}`, method, status, duration, date, request_size, response_size, request_data })
                     }
                 }
