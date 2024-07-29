@@ -2,8 +2,11 @@
   "name": "@delma/tachyon",
   "version": "0.1.0",
   "devDependencies": {
-    "@types/node": "^16",
-    "bun-types": "^1.0.1"
+    "@types/node": "^20.4.2",
+    "bun-types": "^1.1.21"
+  },
+  "dependencies": {
+    "@delma/byos": "git+ssh://github.com/Chidelma/BYOS.git#staging"
   },
   "exports": {
     ".": {

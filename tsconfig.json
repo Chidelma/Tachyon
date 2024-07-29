@@ -3,15 +3,15 @@
         "strict": true,
         "outDir": "bin",
         "target": "ESNext",
-        "module": "ESNext",
-        "moduleResolution": "node",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
         "sourceMap": true,
         "experimentalDecorators": true,
         "pretty": true,
         "noFallthroughCasesInSwitch": true,
         "noImplicitReturns": true,
         "forceConsistentCasingInFileNames": true,
-        "types": ["bun-types", "node"],
+        "types": ["bun-types", "node", "@delma/byos"],
         "isolatedModules": true
     }
-}
+  }

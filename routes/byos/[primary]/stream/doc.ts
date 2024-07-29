@@ -1,4 +1,3 @@
-import { _HTTPContext } from "../../../../types/index.js";
 import { VALIDATE } from "../../../_utils/validation.js";
 
 export default class {

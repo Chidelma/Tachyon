@@ -1,8 +1,7 @@
-import { FileSink, Glob } from "bun";
+import { Glob, generateHeapSnapshot } from "bun";
 import { AsyncLocalStorage } from "async_hooks";
-import { generateHeapSnapshot } from "bun"
-import { _HTTPContext, _WSContext } from "../types";
-import { existsSync } from "fs";
+import { existsSync } from "node:fs";
+import Silo from "@delma/byos";
 
 export default class Yon {
 
@@ -10,13 +9,9 @@ export default class Yon {
 
     private static routeSlugs = new Map<string, Map<string, number>>()
 
-    private static allMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+    private static allMethods = process.env.ALLOW_METHODS ? process.env.ALLOW_METHODS.split(',') : ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 
     private static hasMiddleware = existsSync(`${process.cwd()}/routes/_middleware.ts`)
-
-    private static logDestination = process.env.LOG_PATH
-
-    private static heapDestination = process.env.HEAP_PATH
 
     private static hashDestination = process.env.HASH_FILE_PATH
 
@@ -28,11 +23,15 @@ export default class Yon {
         "Access-Control-Max-Age": process.env.ALLOW_MAX_AGE || ""
     }
 
+    private static readonly logsTableName = "_logs"
+
+    private static readonly heapsTableName = "_heaps"
+
     private static readonly UPGRADE = 'Upgrade'
 
-    static Context = new AsyncLocalStorage<FileSink | undefined>()
+    private static Context = new AsyncLocalStorage<_log[]>()
 
-    private static pathsMatch(request: Request, routeSegs: string[], pathSegs: string[]) {
+    private static pathsMatch(routeSegs: string[], pathSegs: string[]) {
 
         if (routeSegs.length !== pathSegs.length) {
             return false;
@@ -65,7 +64,7 @@ export default class Yon {
 
         for (const [routeKey] of this.indexedRoutes) {
             const routeSegs = routeKey.split('/').map(seg => seg.replace('.ts', ''));
-            const isMatch = this.pathsMatch(request, routeSegs, paths.slice(0, routeSegs.length));
+            const isMatch = this.pathsMatch(routeSegs, paths.slice(0, routeSegs.length));
 
             if (isMatch && routeSegs.length > bestMatchLength) {
                 bestMatchKey = routeKey;
@@ -129,8 +128,8 @@ export default class Yon {
             const info = `[${this.formatDate()}]\x1b[32m INFO${reset} (${process.pid}) ${this.formatMsg(msg)}`
             logger.log(info)
             if(this.Context.getStore()) {
-                const logWriter = this.Context.getStore()!
-                if(logWriter) logWriter.write(`${info.replace(reset, '').replace('\x1b[32m', '')}\n`)
+                const logWriter = this.Context.getStore()
+                if(logWriter && process.env.DATA_PREFIX) logWriter.push({ date: Date.now(), msg: `${info.replace(reset, '').replace('\x1b[32m', '')}\n`, type: "info" }) // logWriter.write(`${info.replace(reset, '').replace('\x1b[32m', '')}\n`)
             }
         }
 
@@ -139,7 +138,7 @@ export default class Yon {
             logger.log(err)
             if(this.Context.getStore()) {
                 const logWriter = this.Context.getStore()
-                if(logWriter) logWriter.write(`${err.replace(reset, '').replace('\x1b[31m', '')}\n`)
+                if(logWriter && process.env.DATA_PREFIX) logWriter.push({ date: Date.now(), msg: `${err.replace(reset, '').replace('\x1b[31m', '')}\n`, type: "error" })
             }
         }
 
@@ -148,7 +147,7 @@ export default class Yon {
             logger.log(bug)
             if(this.Context.getStore()) {
                 const logWriter = this.Context.getStore()
-                if(logWriter) logWriter.write(`${bug.replace(reset, '').replace('\x1b[36m', '')}\n`)
+                if(logWriter && process.env.DATA_PREFIX) logWriter.push({ date: Date.now(), msg: `${bug.replace(reset, '').replace('\x1b[36m', '')}\n`, type: "debug" })
             }
         }
 
@@ -157,7 +156,7 @@ export default class Yon {
             logger.log(warn)
             if(this.Context.getStore()) {
                 const logWriter = this.Context.getStore()
-                if(logWriter) logWriter.write(`${warn.replace(reset, '').replace('\x1b[33m', '')}\n`)
+                if(logWriter && process.env.DATA_PREFIX) logWriter.push({ date: Date.now(), msg: `${warn.replace(reset, '').replace('\x1b[33m', '')}\n`, type: "warn" })
             }
         }
 
@@ -166,7 +165,7 @@ export default class Yon {
             logger.log(trace)
             if(this.Context.getStore()) {
                 const logWriter = this.Context.getStore()
-                if(logWriter) logWriter.write(`${trace.replace(reset, '').replace('\x1b[35m', '')}\n`)
+                if(logWriter && process.env.DATA_PREFIX) logWriter.push({ date: Date.now(), msg: `${trace.replace(reset, '').replace('\x1b[35m', '')}\n`, type: "trace" })
             }
         }
     }
@@ -316,33 +315,15 @@ export default class Yon {
         return new Response(data, { status, headers })
     }
 
-    private static getLogWriter(path: string, method: string) {
-
-        let logWriter: FileSink | undefined;
-
-        if(this.logDestination) {
-            const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
-            const dir = `${this.logDestination}/${date}/${path}/${method}`
-            const file = Bun.file(`${dir}/${crypto.randomUUID()}.txt`)
-            logWriter = file.writer()
-        }
-
-        return logWriter
-    }
-
-    private static async logError(e: Error, url: URL, method: string, logWriter?: FileSink, startTime?: number) {
+    private static async logError(e: Error, ipAddress: string, url: URL, method: string, logs: _log[], startTime?: number) {
 
         const path = url.pathname
 
-        const date = new Date().toISOString().split('T')[0].replaceAll('-', '/')
+        if(logs.length > 0) await Promise.all(logs.map(log => { 
+                                return Silo.putData(Yon.logsTableName, { ipAddress, path: url.pathname, method, ...log })
+                            }))
 
-        const dir = `${this.heapDestination}/${date}/${path}/${method}`
-
-        const heapDestination = `${dir}/${crypto.randomUUID()}.json`
-
-        if(logWriter) logWriter.end()
-
-        if(this.heapDestination) await Bun.write(heapDestination, JSON.stringify(generateHeapSnapshot(), null, 2))
+        if(process.env.DATA_PREFIX) await Silo.putData(Yon.heapsTableName, { ...generateHeapSnapshot(), date: Date.now(), ipAddress, path, method })
 
         console.error(`"${method} ${path}" ${e.cause as number ?? 500} ${startTime ? `- ${Date.now() - startTime}ms` : ''} - ${e.message.length} byte(s)`)
     }
@@ -370,25 +351,27 @@ export default class Yon {
             
             const startTime = Date.now()
 
-            const logWriter = Yon.getLogWriter(url.pathname, req.method)
+            const logs: _log[] = []
 
-            return await Yon.Context.run(logWriter, async () => {
+            return await Yon.Context.run(logs, async () => {
 
                 let res: Response;
                 
                 try {
 
-                    const data = await Yon.processRequest(req, { request: req, requestTime: startTime, ipAddress, publish: server.publish, logWriter, slugs: new Map<string, any>() })
+                    const data = await Yon.processRequest(req, { request: req, requestTime: startTime, ipAddress, publish: server.publish, logs, slugs: new Map<string, any>() })
         
                     res = Yon.processResponse(200, data)
 
-                    if(logWriter) logWriter.end()
+                    if(logs.length > 0) await Promise.all(logs.map(log => { 
+                                            return Silo.putData("logs", { ipAddress, path: url.pathname, method: req.method, ...log })
+                                        }))
                 
                     if(!Yon.isAsyncIterator(data)) console.info(`"${req.method} ${url.pathname}" ${res.status} - ${Date.now() - startTime}ms - ${typeof data !== 'undefined' ? String(data).length : 0} byte(s)`)
 
                 } catch(e: any) {
 
-                    await Yon.logError(e, url, req.method, logWriter, startTime)
+                    await Yon.logError(e, ipAddress, url, req.method, logs, startTime)
 
                     res = Response.json({ detail: e.message }, { status: e.cause as number ?? 500, headers: Yon.headers })
                 }
@@ -411,17 +394,17 @@ export default class Yon {
 
                 if(req.method === null) throw new Error('Method not provided for WebSocket Connection', { cause: 404 })
                 
-                const logWriter = Yon.getLogWriter(new URL(req.url).pathname, req.method)
+                const logs: _log[] = []
 
-                return await Yon.Context.run(logWriter, async () => {
+                return await Yon.Context.run(logs, async () => {
 
                     try {
 
-                        await Yon.processRequest(req, { request: req, subscribe: ws.subscribe, ipAddress, publish: server.publish, slugs: new Map<string, any>() })
+                        await Yon.processRequest(req, { request: req, subscribe: ws.subscribe, ipAddress, publish: server.publish, slugs: new Map<string, any>(), logs })
     
                     } catch(e: any) {
     
-                        await Yon.logError(e, new URL(req.url), req.method, logWriter)
+                        await Yon.logError(e, ipAddress, new URL(req.url), req.method, logs)
     
                         ws.close(e.cause as number ?? 500, e.message)
                     }
@@ -433,8 +416,8 @@ export default class Yon {
             }
 
         }, error(req) {
-        
-            console.error(req.message)
+
+            return Response.json({ detail: req.message }, { status: req.cause as number ?? 500, headers: Yon.headers })
         
         }, port: process.env.PORT || 8000 })
 

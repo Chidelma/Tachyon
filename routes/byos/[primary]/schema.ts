@@ -1,5 +1,3 @@
-import { _HTTPContext } from "../../../types"
-
 export default class Schema {
 
     static async POST({ request }: _HTTPContext) {
