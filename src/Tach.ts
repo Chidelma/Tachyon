@@ -373,8 +373,8 @@ export default class Yon {
                         const clonedReq = req.clone()
 
                         const status = clonedRes.status
-                        const request_size = clonedReq.body ? clonedReq.body.length : 0
-                        const response_size = clonedRes.body ? clonedRes.body.length : 0
+                        const request_size = clonedReq.body && clonedReq.body.length ? clonedReq.body.length : 0
+                        const response_size = typeof data !== "undefined" ? String(data).length : 0
                         const url = new URL(clonedReq.url)
                         const method = clonedReq.method
                         const date = Date.now()
@@ -396,8 +396,8 @@ export default class Yon {
                     const clonedReq = req.clone()
                     
                     const status = clonedRes.status
-                    const request_size = clonedReq.body ? clonedReq.body.length : 0
-                    const response_size = clonedRes.body ? clonedRes.body.length : 0
+                    const request_size = clonedReq.body && clonedReq.body.length ? clonedReq.body.length : 0
+                    const response_size = String({ detail: e.message }).length
                     const url = new URL(clonedReq.url)
                     const method = clonedReq.method
                     const date = Date.now()
