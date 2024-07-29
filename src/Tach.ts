@@ -381,7 +381,7 @@ export default class Yon {
                         const duration = date - startTime
                         
                         if(process.env.DATA_PREFIX) {
-                            const request_data = clonedReq.body ? await clonedReq.text() : null
+                            const request_data = request_size > 0 ? await clonedReq.text() : null
                             await Silo.putData(Yon.requestTableName, { ipAddress, url: `${url.pathname}${url.search}`, method, status, duration, date, request_size, response_size, request_data })
                         }
                         
@@ -406,7 +406,7 @@ export default class Yon {
                     await Yon.logError(e, ipAddress, url, method, logs, startTime)
 
                     if(process.env.DATA_PREFIX) {
-                        const request_data = clonedReq.body ? await clonedReq.text() : null
+                        const request_data = request_size > 0 ? await clonedReq.text() : null
                         await Silo.putData(Yon.requestTableName, { ipAddress, url: `${url.pathname}${url.search}`, method, status, duration, date, request_size, response_size, request_data })
                     }
                 }
