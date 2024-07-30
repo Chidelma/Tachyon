@@ -1,7 +1,8 @@
-import { Glob, generateHeapSnapshot } from "bun";
+import { Glob, generateHeapSnapshot, $ } from "bun";
 import { AsyncLocalStorage } from "async_hooks";
 import { existsSync } from "node:fs";
 import Silo from "@delma/byos";
+import { watch } from "node:fs";
 
 export default class Yon {
 
@@ -380,9 +381,26 @@ export default class Yon {
         console.error(`"${method} ${path}" ${e.cause as number ?? 500} ${startTime ? `- ${Date.now() - startTime}ms` : ''} - ${e.message.length} byte(s)`)
     }
 
+    private static watchFiles() {
+
+        const idx = Bun.argv.findIndex(arg => arg.trim() === '--watch' || arg.trim() === '--hot')
+        
+        if(idx > 0) {
+
+            watch('./routes', { recursive: true }, async (ev, filename) => {
+                delete import.meta.require.cache[`${process.cwd()}/routes/${filename}`]
+                if(!filename?.split('/').some((path) => path.startsWith('_'))) await this.validateRoutes(filename!)
+            })
+        }
+    }
+
     static async serve() {
 
+        const start = Date.now()
+
         await this.validateRoutes()
+
+        this.watchFiles()
 
         this.configLogger()
 
@@ -488,19 +506,15 @@ export default class Yon {
 
         process.on('SIGINT', () => process.exit(0))
 
-        console.info(`Live Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit)`)
+        console.info(`Live Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit) - StartUp Time: ${Date.now() - start}ms`)
     }
 
-    static async validateRoutes() {
-
-        const files = (await Array.fromAsync(new Glob(`**/*.{ts,js}`).scan({ cwd: './routes' })))
-
-        const routes = files.filter((route) => !route.split('/').some((path) => path.startsWith('_')))
+    private static async validateRoutes(route?: string) {
 
         const staticPaths: string[] = []
-    
-        for(const route of routes) {
-    
+
+        const validateRoute = async (route: string) => {  
+
             const paths = route.split('/')
     
             const pattern = /[<>|\[\]]/
@@ -544,6 +558,14 @@ export default class Yon {
 
             if(slugs.size > 0) this.routeSlugs.set(route, slugs)
         }
+
+        if(route) return await validateRoute(route)
+
+        const files = Array.from(new Glob(`**/*.{ts,js}`).scanSync({ cwd: './routes' }))
+
+        const routes = files.filter((route) => !route.split('/').some((path) => path.startsWith('_')))
+
+        for(const route of routes) await validateRoute(route)
 
         if(this.hashDestination) this.hashRoutes()
     }
