@@ -1,4 +1,4 @@
-import { Glob, generateHeapSnapshot, $ } from "bun";
+import { Glob, generateHeapSnapshot } from "bun";
 import { AsyncLocalStorage } from "async_hooks";
 import { existsSync } from "node:fs";
 import Silo from "@delma/byos";
@@ -14,7 +14,9 @@ export default class Yon {
 
     private static hasMiddleware = existsSync(`${process.cwd()}/routes/_middleware.ts`)
 
-    private static hashDestination = process.env.HASH_FILE_PATH
+    private static hashDestination = process.env.HASH_FILE_PATH 
+
+    private static inDevelopment = process.env.DEVELOPMENT === 'true'
 
     private static headers: HeadersInit = {
         "Access-Control-Allow-Headers": process.env.ALLOW_HEADERS || "",
@@ -24,11 +26,17 @@ export default class Yon {
         "Access-Control-Max-Age": process.env.ALLOW_MAX_AGE || ""
     }
 
-    private static readonly logsTableName = "_logs"
-    private static readonly heapsTableName = "_heaps"
-    private static readonly requestTableName = "_requests"
+    private static readonly dbPath = process.env.DATA_PREFIX
 
-    private static readonly UPGRADE = 'Upgrade'
+    private static readonly logsTableName = "_logs"
+    private static readonly errorsTableName = "_errors"
+    private static readonly requestTableName = "_requests"
+    private static readonly statsTableName = "_stats"
+
+    private static readonly saveLogs = process.env.SAVE_LOGS === 'true'
+    private static readonly saveStats = process.env.SAVE_STATS === 'true'
+    private static readonly saveRequests = process.env.SAVE_REQUESTS === 'true'
+    private static readonly saveErrors = process.env.SAVE_ERRORS === 'true'
 
     private static Context = new AsyncLocalStorage<_log[]>()
 
@@ -130,7 +138,7 @@ export default class Yon {
             logger.log(info)
             if(this.Context.getStore()) {
                 const logWriter = this.Context.getStore()
-                if(logWriter && process.env.DATA_PREFIX) logWriter.push({ date: Date.now(), msg: `${info.replace(reset, '').replace('\x1b[32m', '')}\n`, type: "info" }) // logWriter.write(`${info.replace(reset, '').replace('\x1b[32m', '')}\n`)
+                if(logWriter && Yon.dbPath && Yon.saveLogs) logWriter.push({ date: Date.now(), msg: `${info.replace(reset, '').replace('\x1b[32m', '')}\n`, type: "info" }) // logWriter.write(`${info.replace(reset, '').replace('\x1b[32m', '')}\n`)
             }
         }
 
@@ -139,7 +147,7 @@ export default class Yon {
             logger.log(err)
             if(this.Context.getStore()) {
                 const logWriter = this.Context.getStore()
-                if(logWriter && process.env.DATA_PREFIX) logWriter.push({ date: Date.now(), msg: `${err.replace(reset, '').replace('\x1b[31m', '')}\n`, type: "error" })
+                if(logWriter && Yon.dbPath && Yon.saveLogs) logWriter.push({ date: Date.now(), msg: `${err.replace(reset, '').replace('\x1b[31m', '')}\n`, type: "error" })
             }
         }
 
@@ -148,7 +156,7 @@ export default class Yon {
             logger.log(bug)
             if(this.Context.getStore()) {
                 const logWriter = this.Context.getStore()
-                if(logWriter && process.env.DATA_PREFIX) logWriter.push({ date: Date.now(), msg: `${bug.replace(reset, '').replace('\x1b[36m', '')}\n`, type: "debug" })
+                if(logWriter && Yon.dbPath && Yon.saveLogs) logWriter.push({ date: Date.now(), msg: `${bug.replace(reset, '').replace('\x1b[36m', '')}\n`, type: "debug" })
             }
         }
 
@@ -157,7 +165,7 @@ export default class Yon {
             logger.log(warn)
             if(this.Context.getStore()) {
                 const logWriter = this.Context.getStore()
-                if(logWriter && process.env.DATA_PREFIX) logWriter.push({ date: Date.now(), msg: `${warn.replace(reset, '').replace('\x1b[33m', '')}\n`, type: "warn" })
+                if(logWriter && Yon.dbPath && Yon.saveLogs) logWriter.push({ date: Date.now(), msg: `${warn.replace(reset, '').replace('\x1b[33m', '')}\n`, type: "warn" })
             }
         }
 
@@ -166,14 +174,14 @@ export default class Yon {
             logger.log(trace)
             if(this.Context.getStore()) {
                 const logWriter = this.Context.getStore()
-                if(logWriter && process.env.DATA_PREFIX) logWriter.push({ date: Date.now(), msg: `${trace.replace(reset, '').replace('\x1b[35m', '')}\n`, type: "trace" })
+                if(logWriter && Yon.dbPath && Yon.saveLogs) logWriter.push({ date: Date.now(), msg: `${trace.replace(reset, '').replace('\x1b[35m', '')}\n`, type: "trace" })
             }
         }
     }
 
     private static async logRequest(request: Request, status: number, context: _HTTPContext, data: any = null) {
 
-        if(process.env.DATA_PREFIX) {
+        if(Yon.dbPath && Yon.saveRequests) {
 
             const url = new URL(request.url)
             const date = Date.now()
@@ -376,16 +384,14 @@ export default class Yon {
                                 return Silo.putData(Yon.logsTableName, { ipAddress, path, method, ...log })
                             }))
 
-        if(process.env.DATA_PREFIX) await Silo.putData(Yon.heapsTableName, { ...generateHeapSnapshot(), date: Date.now(), ipAddress, path, method, error: e.message })
+        if(Yon.dbPath && Yon.saveErrors) await Silo.putData(Yon.errorsTableName, { ...generateHeapSnapshot(), date: Date.now(), ipAddress, path, method, error: e.message })
 
         console.error(`"${method} ${path}" ${e.cause as number ?? 500} ${startTime ? `- ${Date.now() - startTime}ms` : ''} - ${e.message.length} byte(s)`)
     }
 
     private static watchFiles() {
-
-        const idx = Bun.argv.findIndex(arg => arg.trim() === '--watch' || arg.trim() === '--hot')
         
-        if(idx > 0) {
+        if(this.inDevelopment) {
 
             watch('./routes', { recursive: true }, async (ev, filename) => {
                 delete import.meta.require.cache[`${process.cwd()}/routes/${filename}`]
@@ -404,105 +410,69 @@ export default class Yon {
 
         this.configLogger()
 
+        let request: Request;
+
+        let ipAddress: string;
+
+        let logs: _log[] = [];
+
+        let startTime: number;
+
         const server = Bun.serve({ async fetch(req: Request) {
 
-            const ipAddress: string = server.requestIP(req)!.address
+            request = req.clone()
+
+            logs = []
+
+            ipAddress = server.requestIP(req)!.address
 
             const url = new URL(req.url)
-
-            if(req.headers.get('Connection') === Yon.UPGRADE && req.headers.get(Yon.UPGRADE) === 'websocket') {
-                    
-                if(!server.upgrade<_WSContext>(req, { data: { request: req, ipAddress }})) throw new Error('WebSocket upgrade error', { cause: 500 })
-
-                console.info('Upgraded to WebSocket!')
-                
-                return undefined
-            }
             
-            const startTime = Date.now()
-
-            const logs: _log[] = []
+            startTime = Date.now()
 
             return await Yon.Context.run(logs, async () => {
 
                 let res: Response;
                 
-                try {
-
-                    const data = await Yon.processRequest(req, { request: req, requestTime: startTime, ipAddress, publish: server.publish, logs, slugs: new Map<string, any>() })
+                const data = await Yon.processRequest(req, { request: req, requestTime: startTime, ipAddress, logs, slugs: new Map<string, any>() })
         
-                    res = Yon.processResponse(200, data)
+                res = Yon.processResponse(200, data)
 
-                    if(logs.length > 0) await Promise.all(logs.map(log => { 
-                                            return Silo.putData(Yon.logsTableName, { ipAddress, path: url.pathname, method: req.method, ...log })
-                                        }))
-                
-                    if(!Yon.isAsyncIterator(data)) {
+                if(logs.length > 0) await Promise.all(logs.map(log => { 
+                                        return Silo.putData(Yon.logsTableName, { ipAddress, path: url.pathname, method: req.method, ...log })
+                                    }))
+            
+                if(!Yon.isAsyncIterator(data)) {
 
-                        const status = res.status
-                        const response_size = typeof data !== "undefined" ? String(data).length : 0
-                        const url = new URL(req.url)
-                        const method = req.method
-                        const date = Date.now()
-                        const duration = date - startTime
-                        
-                        console.info(`"${method} ${url.pathname}" ${status} - ${duration}ms - ${response_size} byte(s)`)
-                    }
-
-                } catch(e: any) {
-
-                    res = Response.json({ detail: e.message }, { status: e.cause as number ?? 500, headers: Yon.headers })
-                    
+                    const status = res.status
+                    const response_size = typeof data !== "undefined" ? String(data).length : 0
                     const url = new URL(req.url)
                     const method = req.method
-
-                    await Yon.logError(e, ipAddress, url, method, logs, startTime)
+                    const date = Date.now()
+                    const duration = date - startTime
+                    
+                    console.info(`"${method} ${url.pathname}" ${status} - ${duration}ms - ${response_size} byte(s)`)
+                
+                    if(Yon.dbPath && Yon.saveStats) await Silo.putData(Yon.statsTableName, { cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
                 }
                 
                 return res
             })
         
-        }, websocket: {
+        }, async error(req) {
 
-            open(ws) {
-                const { request } = ws.data as _WSContext
-                const url = new URL(request.url)
-                ws.send(`Connected ${url.pathname}`)
-            }, 
-            async message(ws, message: string) {
+            const url = new URL(request.url)
+            const method = request.method
 
-                const { ipAddress, request } = ws.data as _WSContext
+            await Yon.logError(req, ipAddress, url, method, logs, startTime)
 
-                const req = new Request(request.url, JSON.parse(message))
-
-                if(req.method === null) throw new Error('Method not provided for WebSocket Connection', { cause: 404 })
-                
-                const logs: _log[] = []
-
-                return await Yon.Context.run(logs, async () => {
-
-                    try {
-
-                        await Yon.processRequest(req, { request: req, subscribe: ws.subscribe, ipAddress, publish: server.publish, slugs: new Map<string, any>(), logs })
-    
-                    } catch(e: any) {
-    
-                        await Yon.logError(e, ipAddress, new URL(req.url), req.method, logs)
-    
-                        ws.close(e.cause as number ?? 500, e.message)
-                    }
-                })
-            },
-            close(ws, code, reason) {
-                const { request } = ws.data as _WSContext
-                console.warn(`Disconnected from ${new URL(request.url).pathname} - Code: ${code} - Reason: ${reason}`)
-            }
-
-        }, error(req) {
+            if(Yon.dbPath && Yon.saveStats) await Silo.putData(Yon.statsTableName, { cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
 
             return Response.json({ detail: req.message }, { status: req.cause as number ?? 500, headers: Yon.headers })
-        
-        }, port: process.env.PORT || 8000 })
+        }, 
+            development: this.inDevelopment,
+            port: process.env.PORT || 8000 
+        })
 
         process.on('SIGINT', () => process.exit(0))
 
