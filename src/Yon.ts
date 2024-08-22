@@ -1,4 +1,4 @@
-
+#!/usr/bin/env bun
 import Tach from "./Tach.js"
 
 try {
