@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, watch } from "node:fs";
 import Silo from "@delma/byos";
-import { Glob } from "bun";
+import { Glob, Server } from "bun";
 
-export default {
+const Tach = {
 
     indexedRoutes: new Map<string, Map<string, Function>>(),
 
@@ -46,7 +46,7 @@ export default {
             return false;
         }
     
-        const slugs = this.routeSlugs.get(`${routeSegs.join('/')}.ts`) ?? new Map<string, number>()
+        const slugs = Tach.routeSlugs.get(`${routeSegs.join('/')}.ts`) ?? new Map<string, number>()
     
         for (let i = 0; i < routeSegs.length; i++) {
             if (!slugs.has(routeSegs[i]) && routeSegs[i].replace('.ts', '') !== pathSegs[i]) {
@@ -71,9 +71,9 @@ export default {
         let bestMatchKey = '';
         let bestMatchLength = -1;
 
-        for (const [routeKey] of this.indexedRoutes) {
+        for (const [routeKey] of Tach.indexedRoutes) {
             const routeSegs = routeKey.split('/').map(seg => seg.replace('.ts', ''));
-            const isMatch = this.pathsMatch(routeSegs, paths.slice(0, routeSegs.length));
+            const isMatch = Tach.pathsMatch(routeSegs, paths.slice(0, routeSegs.length));
 
             if (isMatch && routeSegs.length > bestMatchLength) {
                 bestMatchKey = routeKey;
@@ -82,25 +82,25 @@ export default {
         }
 
         if (bestMatchKey) {
-            const routeMap = this.indexedRoutes.get(bestMatchKey)!
+            const routeMap = Tach.indexedRoutes.get(bestMatchKey)!
             handler = routeMap.get(request.method);
 
             for (const [key] of routeMap) {
-                if (this.allMethods.includes(key)) allowedMethods.push(key);
+                if (Tach.allMethods.includes(key)) allowedMethods.push(key);
             }
 
             params = paths.slice(bestMatchLength);
 
-            const slugMap = this.routeSlugs.get(bestMatchKey) ?? new Map<string, number>()
+            const slugMap = Tach.routeSlugs.get(bestMatchKey) ?? new Map<string, number>()
 
             slugMap.forEach((idx, key) => slugs.set(key, paths[idx]))
         }
 
-        this.headers = { ...this.headers, "Access-Control-Allow-Methods": allowedMethods.join(',') };
+        Tach.headers = { ...Tach.headers, "Access-Control-Allow-Methods": allowedMethods.join(',') };
 
         if (!handler) throw new Error(`Route ${request.method} ${url.pathname} not found`, { cause: 404 });
 
-        return { handler, params: this.parseParams(params), slugs }
+        return { handler, params: Tach.parseParams(params), slugs }
     },
 
     formatDate() {
@@ -134,66 +134,66 @@ export default {
         const reset = '\x1b[0m'
 
         console.info = (msg) => {
-            const info = `[${this.formatDate()}]\x1b[32m INFO${reset} (${process.pid}) ${this.formatMsg(msg)}`
+            const info = `[${Tach.formatDate()}]\x1b[32m INFO${reset} (${process.pid}) ${Tach.formatMsg(msg)}`
             logger.log(info)
-            if(this.context.getStore()) {
-                const logWriter = this.context.getStore()
-                if(logWriter && this.dbPath && this.saveLogs) logWriter.push({ date: Date.now(), msg: `${info.replace(reset, '').replace('\x1b[32m', '')}\n`, type: "info" }) // logWriter.write(`${info.replace(reset, '').replace('\x1b[32m', '')}\n`)
+            if(Tach.context.getStore()) {
+                const logWriter = Tach.context.getStore()
+                if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${info.replace(reset, '').replace('\x1b[32m', '')}\n`, type: "info" }) // logWriter.write(`${info.replace(reset, '').replace('\x1b[32m', '')}\n`)
             }
         }
 
         console.error = (msg) => {
-            const err = `[${this.formatDate()}]\x1b[31m ERROR${reset} (${process.pid}) ${this.formatMsg(msg)}`
+            const err = `[${Tach.formatDate()}]\x1b[31m ERROR${reset} (${process.pid}) ${Tach.formatMsg(msg)}`
             logger.log(err)
-            if(this.context.getStore()) {
-                const logWriter = this.context.getStore()
-                if(logWriter && this.dbPath && this.saveLogs) logWriter.push({ date: Date.now(), msg: `${err.replace(reset, '').replace('\x1b[31m', '')}\n`, type: "error" })
+            if(Tach.context.getStore()) {
+                const logWriter = Tach.context.getStore()
+                if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${err.replace(reset, '').replace('\x1b[31m', '')}\n`, type: "error" })
             }
         }
 
         console.debug = (msg) => {
-            const bug = `[${this.formatDate()}]\x1b[36m DEBUG${reset} (${process.pid}) ${this.formatMsg(msg)}`
+            const bug = `[${Tach.formatDate()}]\x1b[36m DEBUG${reset} (${process.pid}) ${Tach.formatMsg(msg)}`
             logger.log(bug)
-            if(this.context.getStore()) {
-                const logWriter = this.context.getStore()
-                if(logWriter && this.dbPath && this.saveLogs) logWriter.push({ date: Date.now(), msg: `${bug.replace(reset, '').replace('\x1b[36m', '')}\n`, type: "debug" })
+            if(Tach.context.getStore()) {
+                const logWriter = Tach.context.getStore()
+                if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${bug.replace(reset, '').replace('\x1b[36m', '')}\n`, type: "debug" })
             }
         }
 
         console.warn = (msg) => {
-            const warn = `[${this.formatDate()}]\x1b[33m WARN${reset} (${process.pid}) ${this.formatMsg(msg)}`
+            const warn = `[${Tach.formatDate()}]\x1b[33m WARN${reset} (${process.pid}) ${Tach.formatMsg(msg)}`
             logger.log(warn)
-            if(this.context.getStore()) {
-                const logWriter = this.context.getStore()
-                if(logWriter && this.dbPath && this.saveLogs) logWriter.push({ date: Date.now(), msg: `${warn.replace(reset, '').replace('\x1b[33m', '')}\n`, type: "warn" })
+            if(Tach.context.getStore()) {
+                const logWriter = Tach.context.getStore()
+                if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${warn.replace(reset, '').replace('\x1b[33m', '')}\n`, type: "warn" })
             }
         }
 
         console.trace = (msg) => {
-            const trace = `[${this.formatDate()}]\x1b[35m TRACE${reset} (${process.pid}) ${this.formatMsg(msg)}`
+            const trace = `[${Tach.formatDate()}]\x1b[35m TRACE${reset} (${process.pid}) ${Tach.formatMsg(msg)}`
             logger.log(trace)
-            if(this.context.getStore()) {
-                const logWriter = this.context.getStore()
-                if(logWriter && this.dbPath && this.saveLogs) logWriter.push({ date: Date.now(), msg: `${trace.replace(reset, '').replace('\x1b[35m', '')}\n`, type: "trace" })
+            if(Tach.context.getStore()) {
+                const logWriter = Tach.context.getStore()
+                if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${trace.replace(reset, '').replace('\x1b[35m', '')}\n`, type: "trace" })
             }
         }
     },
 
     async logRequest(request: Request, status: number, context: _HTTPContext, data: any = null) {
 
-        if(this.dbPath && this.saveRequests) {
+        if(Tach.dbPath && Tach.saveRequests) {
 
             const url = new URL(request.url)
             const date = Date.now()
             const duration = date - (context.requestTime ?? 0)
 
-            await Silo.putData(this.requestTableName, { url: `${url.pathname}${url.search}`, method: request.method, status, duration, date, size: data ? String(data).length : 0, data })
+            await Silo.putData(Tach.requestTableName, { ipAddress: context.ipAddress, url: `${url.pathname}${url.search}`, method: request.method, status, duration, date, size: data ? String(data).length : 0, data })
         }
     },
 
     async processRequest(request: Request, context: _HTTPContext) {
 
-        const { handler, params, slugs } = this.getHandler(request)
+        const { handler, params, slugs } = Tach.getHandler(request)
 
         if(slugs.size > 0) context.slugs = slugs
 
@@ -203,7 +203,7 @@ export default {
 
         if(body.size > 0) {
 
-            if(body.type.includes('form')) data = this.parseKVParams(await body.formData())
+            if(body.type.includes('form')) data = Tach.parseKVParams(await body.formData())
             else {
                 try {
                     data = await body.json()
@@ -217,21 +217,21 @@ export default {
 
         let queryParams: Record<string, any> | undefined;
 
-        if(searchParams.size > 0) queryParams = this.parseKVParams(searchParams)
+        if(searchParams.size > 0) queryParams = Tach.parseKVParams(searchParams)
 
         if(params.length > 0 && !queryParams && !data) {
 
             let res = undefined
 
-            if(this.hasMiddleware) {
+            if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
+                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
 
                 res = await middleware(async () => handler(...params, context))
             
             } else res = await handler(...params, context)
 
-            await this.logRequest(request, 200, context)
+            await Tach.logRequest(request, 200, context)
 
             return res
 
@@ -239,15 +239,15 @@ export default {
 
             let res = undefined
 
-            if(this.hasMiddleware) {
+            if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
+                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
 
                 res = await middleware(async () => handler(queryParams, context))
             
             } else res = await handler(queryParams, context)
 
-            await this.logRequest(request, 200, context)
+            await Tach.logRequest(request, 200, context)
 
             return res
 
@@ -255,15 +255,15 @@ export default {
 
             let res = undefined
 
-            if(this.hasMiddleware) {
+            if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
+                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
 
                 res = await middleware(async () => handler(data, context))
 
             } else res = await handler(data, context)
 
-            await this.logRequest(request, 200, context, await body.text())
+            await Tach.logRequest(request, 200, context, await body.text())
 
             return res
 
@@ -271,15 +271,15 @@ export default {
 
             let res = undefined
 
-            if(this.hasMiddleware) {
+            if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
+                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
 
                 res = await middleware(async () => handler(...params, queryParams, context))
             
             } else res = await handler(...params, queryParams, context)
 
-            await this.logRequest(request, 200, context)
+            await Tach.logRequest(request, 200, context)
 
             return res
         
@@ -287,15 +287,15 @@ export default {
 
             let res = undefined
 
-            if(this.hasMiddleware) {
+            if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
+                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
 
                 res = await middleware(async () => handler(...params, data, context))
             
             } else res = await handler(...params, data, context)
 
-            await this.logRequest(request, 200, context, await body.text())
+            await Tach.logRequest(request, 200, context, await body.text())
 
             return res
 
@@ -303,15 +303,15 @@ export default {
 
             let res = undefined
 
-            if(this.hasMiddleware) {
+            if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
+                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
 
                 res = await middleware(async () => handler(queryParams, data, context))
             
             } else res = await handler(queryParams, data, context)
 
-            await this.logRequest(request, 200, context, await body.text())
+            await Tach.logRequest(request, 200, context, await body.text())
 
             return res
         
@@ -319,15 +319,15 @@ export default {
 
             let res = undefined
 
-            if(this.hasMiddleware) {
+            if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
+                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
 
                 res = await middleware(async () => handler(...params, queryParams, data, context))
             
             } else res = await handler(...params, queryParams, data, context)
 
-            await this.logRequest(request, 200, context, await body.text())
+            await Tach.logRequest(request, 200, context, await body.text())
 
             return res
         
@@ -335,15 +335,15 @@ export default {
 
             let res = undefined
 
-            if(this.hasMiddleware) {
+            if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${process.cwd()}/routes/_middleware.ts`)).default
+                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
 
                 res = await middleware(async () => handler(context))
             
             } else res = await handler(context)
 
-            await this.logRequest(request, 200, context)
+            await Tach.logRequest(request, 200, context)
 
             return res
         }
@@ -359,7 +359,7 @@ export default {
 
     processResponse(status: number, data?: any) {
 
-        const headers = this.headers
+        const headers = Tach.headers
 
         if(data instanceof Set) return Response.json(Array.from(data), { status, headers }) 
         
@@ -367,7 +367,7 @@ export default {
 
         if(data instanceof FormData || data instanceof Blob) return new Response(data, { status, headers })
 
-        if(typeof data === "object" && !Array.isArray(data) && !this.isAsyncIterator(data) && !this.hasFunctions(data)) return Response.json(data, { status, headers })
+        if(typeof data === "object" && !Array.isArray(data) && !Tach.isAsyncIterator(data) && !Tach.hasFunctions(data)) return Response.json(data, { status, headers })
 
         if((typeof data === "object" && Array.isArray(data)) || data instanceof Array) return Response.json(data, { status, headers })
 
@@ -376,31 +376,31 @@ export default {
         return new Response(data, { status, headers })
     },
 
-    async logError(e: Error, url: URL, method: string, logs: _log[], startTime?: number) {
+    async logError(e: Error, ipAddress: string, url: URL, method: string, logs: _log[], startTime?: number) {
 
         const path = url.pathname
 
         if(logs.length > 0) await Promise.all(logs.map(log => { 
-                                return Silo.putData(this.logsTableName, { path, method, ...log })
+                                return Silo.putData(Tach.logsTableName, { ipAddress, path, method, ...log })
                             }))
 
-        if(this.dbPath && this.saveErrors) await Silo.putData(this.errorsTableName, { date: Date.now(),path, method, error: e.message })
+        if(Tach.dbPath && Tach.saveErrors) await Silo.putData(Tach.errorsTableName, { ipAddress, date: Date.now(),path, method, error: e.message })
 
         console.error(`"${method} ${path}" ${e.cause as number ?? 500} ${startTime ? `- ${Date.now() - startTime}ms` : ''} - ${e.message.length} byte(s)`)
     },
 
     watchFiles() {
         
-        if(this.inDevelopment) {
+        if(Tach.inDevelopment) {
 
-            watch('./routes', { recursive: true }, async (ev, filename) => {
-                delete import.meta.require.cache[`${process.cwd()}/routes/${filename}`]
-                if(!filename?.split('/').some((path) => path.startsWith('_'))) await this.validateRoutes(filename!)
+            watch(Tach.routesPath, { recursive: true }, async (ev, filename) => {
+                delete import.meta.require.cache[`${Tach.routesPath}/${filename}`]
+                if(!filename?.split('/').some((path) => path.startsWith('_'))) await Tach.validateRoutes(filename!)
             })
         }
     },
 
-    async fetch(req: Request) {
+    async fetch(req: Request, server: Server) {
 
         const request = req.clone()
 
@@ -410,21 +410,23 @@ export default {
         
         const startTime = Date.now()
 
-        return await this.context.run(logs, async () => {
+        const ipAddress = server.requestIP(req)!.address
+
+        return await Tach.context.run(logs, async () => {
 
             let res: Response
 
             try {
 
-                const data = await this.processRequest(req, { request: req, requestTime: startTime, logs, slugs: new Map<string, any>() })
+                const data = await Tach.processRequest(req, { ipAddress, request: req, requestTime: startTime, logs, slugs: new Map<string, any>() })
     
-                res = this.processResponse(200, data)
+                res = Tach.processResponse(200, data)
 
                 if(logs.length > 0) await Promise.all(logs.map(log => { 
-                                        return Silo.putData(this.logsTableName, { path: url.pathname, method: req.method, ...log })
+                                        return Silo.putData(Tach.logsTableName, { ipAddress, path: url.pathname, method: req.method, ...log })
                                     }))
             
-                if(!this.isAsyncIterator(data)) {
+                if(!Tach.isAsyncIterator(data)) {
 
                     const status = res.status
                     const response_size = typeof data !== "undefined" ? String(data).length : 0
@@ -435,18 +437,18 @@ export default {
                     
                     console.info(`"${method} ${url.pathname}" ${status} - ${duration}ms - ${response_size} byte(s)`)
                 
-                    if(this.dbPath && this.saveStats) await Silo.putData(this.statsTableName, { cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
+                    if(Tach.dbPath && Tach.saveStats) await Silo.putData(Tach.statsTableName, { ipAddress, cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
                 }
 
             } catch(e) {
 
                 const method = request.method
 
-                await this.logError(e as Error, url, method, logs, startTime)
+                await Tach.logError(e as Error, ipAddress, url, method, logs, startTime)
 
-                if(this.dbPath && this.saveStats) await Silo.putData(this.statsTableName, { cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
+                if(Tach.dbPath && Tach.saveStats) await Silo.putData(Tach.statsTableName, { ipAddress, cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
 
-                res = Response.json({ detail: (e as Error).message }, { status: (e as Error).cause as number ?? 500, headers: this.headers })
+                res = Response.json({ detail: (e as Error).message }, { status: (e as Error).cause as number ?? 500, headers: Tach.headers })
             }
             
             return res
@@ -484,13 +486,13 @@ export default {
     
             staticPaths.push(staticPath)
 
-            const module = await import(`${process.cwd()}/${this.routesPath}/${route}`)
+            const module = await import(`${process.cwd()}/${Tach.routesPath}/${route}`)
 
             const controller = (new module.default() as any).constructor
 
             const methodFuncs = new Map<string, Function>()
 
-            for(const method of this.allMethods) {
+            for(const method of Tach.allMethods) {
 
                 if(controller[method]) {
 
@@ -498,14 +500,14 @@ export default {
                 }
             }
 
-            this.indexedRoutes.set(route, methodFuncs)
+            Tach.indexedRoutes.set(route, methodFuncs)
 
-            if(slugs.size > 0) this.routeSlugs.set(route, slugs)
+            if(slugs.size > 0) Tach.routeSlugs.set(route, slugs)
         }
 
         if(route) return await validateRoute(route)
 
-        const files = Array.from(new Glob(`**/*.{ts,js}`).scanSync({ cwd: this.routesPath }))
+        const files = Array.from(new Glob(`**/*.{ts,js}`).scanSync({ cwd: Tach.routesPath }))
 
         const routes = files.filter((route) => !route.split('/').some((path) => path.startsWith('_')))
 
@@ -556,7 +558,7 @@ export default {
     
                     else if(val === 'false') params[key] = false
     
-                    else if(typeof val === "string" && val.includes(',')) params[key] = this.parseParams(val.split(','))
+                    else if(typeof val === "string" && val.includes(',')) params[key] = Tach.parseParams(val.split(','))
     
                     else if(val === 'null') params[key] = null
     
@@ -569,3 +571,5 @@ export default {
         return params
     }
 }
+
+export default Tach

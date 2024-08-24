@@ -8,5 +8,6 @@ interface _HTTPContext {
     request: Request,
     requestTime: number,
     logs: _log[],
+    ipAddress: string,
     slugs: Map<string, any>
 }
