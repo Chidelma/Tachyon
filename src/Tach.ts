@@ -1,46 +1,46 @@
-import { Glob, generateHeapSnapshot } from "bun";
-import { AsyncLocalStorage } from "async_hooks";
-import { existsSync } from "node:fs";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { existsSync, watch } from "node:fs";
 import Silo from "@delma/byos";
-import { watch } from "node:fs";
+import { Glob } from "bun";
 
-export default class Yon {
+export default {
 
-    private static indexedRoutes = new Map<string, Map<string, Function>>()
+    indexedRoutes: new Map<string, Map<string, Function>>(),
 
-    private static routeSlugs = new Map<string, Map<string, number>>()
+    routeSlugs: new Map<string, Map<string, number>>(),
 
-    private static allMethods = process.env.ALLOW_METHODS ? process.env.ALLOW_METHODS.split(',') : ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+    allMethods: process.env.ALLOW_METHODS ? process.env.ALLOW_METHODS.split(',') : ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
 
-    private static hasMiddleware = existsSync(`${process.cwd()}/routes/_middleware.ts`)
+    hasMiddleware: existsSync(`${process.env.ROUTES_PATH || './routes'}/_middleware.ts`),
 
-    private static hashDestination = process.env.HASH_FILE_PATH 
+    inDevelopment: process.env.DEVELOPMENT === 'true',
 
-    private static inDevelopment = process.env.DEVELOPMENT === 'true'
-
-    private static headers: HeadersInit = {
+    headers: {
         "Access-Control-Allow-Headers": process.env.ALLOW_HEADERS || "",
         "Access-Control-Allow-Origin": process.env.ALLLOW_ORGINS || "",
         "Access-Control-Allow-Credential": process.env.ALLOW_CREDENTIALS || "false",
         "Access-Control-Expose-Headers": process.env.ALLOW_EXPOSE_HEADERS || "",
-        "Access-Control-Max-Age": process.env.ALLOW_MAX_AGE || ""
-    }
+        "Access-Control-Max-Age": process.env.ALLOW_MAX_AGE || "",
+        "Access-Control-Allow-Methods": process.env.ALLOW_METHODS || ""
+    },
 
-    private static readonly dbPath = process.env.DATA_PREFIX
+    dbPath: process.env.DB_DIR || './db',
 
-    private static readonly logsTableName = "_logs"
-    private static readonly errorsTableName = "_errors"
-    private static readonly requestTableName = "_requests"
-    private static readonly statsTableName = "_stats"
+    saveStats: process.env.SAVE_STATS === 'true',
+    saveRequests: process.env.SAVE_REQUESTS === 'true',
+    saveErrors: process.env.SAVE_ERRORS === 'true',
+    saveLogs: process.env.SAVE_LOGS === 'true',
 
-    private static readonly saveLogs = process.env.SAVE_LOGS === 'true'
-    private static readonly saveStats = process.env.SAVE_STATS === 'true'
-    private static readonly saveRequests = process.env.SAVE_REQUESTS === 'true'
-    private static readonly saveErrors = process.env.SAVE_ERRORS === 'true'
+    logsTableName: "_logs",
+    errorsTableName: "_errors",
+    requestTableName: "_requests",
+    statsTableName: "_stats",
 
-    private static Context = new AsyncLocalStorage<_log[]>()
+    context: new AsyncLocalStorage<_log[]>(),
 
-    private static pathsMatch(routeSegs: string[], pathSegs: string[]) {
+    routesPath: process.env.ROUTES_PATH || './routes',
+
+    pathsMatch(routeSegs: string[], pathSegs: string[]) {
 
         if (routeSegs.length !== pathSegs.length) {
             return false;
@@ -55,9 +55,9 @@ export default class Yon {
         }
     
         return true;
-    }
+    },
 
-    private static getHandler(request: Request) {
+    getHandler(request: Request) {
 
         const url = new URL(request.url);
 
@@ -101,13 +101,13 @@ export default class Yon {
         if (!handler) throw new Error(`Route ${request.method} ${url.pathname} not found`, { cause: 404 });
 
         return { handler, params: this.parseParams(params), slugs }
-    }
+    },
 
-    private static formatDate() {
+    formatDate() {
         return new Date().toISOString().replace('T', ' ').replace('Z', '')
-    }
+    },
 
-    private static formatMsg(msg: any) {
+    formatMsg(msg: any) {
 
         if(msg instanceof Set) return "\n" + JSON.stringify(Array.from(msg), null, 2)
         
@@ -125,9 +125,9 @@ export default class Yon {
             || (typeof msg === 'object' && msg !== null)) return "\n" + JSON.stringify(msg, null, 2) 
 
         return msg
-    }
+    },
 
-    private static configLogger() {
+    configLogger() {
 
         const logger = console
 
@@ -136,62 +136,62 @@ export default class Yon {
         console.info = (msg) => {
             const info = `[${this.formatDate()}]\x1b[32m INFO${reset} (${process.pid}) ${this.formatMsg(msg)}`
             logger.log(info)
-            if(this.Context.getStore()) {
-                const logWriter = this.Context.getStore()
-                if(logWriter && Yon.dbPath && Yon.saveLogs) logWriter.push({ date: Date.now(), msg: `${info.replace(reset, '').replace('\x1b[32m', '')}\n`, type: "info" }) // logWriter.write(`${info.replace(reset, '').replace('\x1b[32m', '')}\n`)
+            if(this.context.getStore()) {
+                const logWriter = this.context.getStore()
+                if(logWriter && this.dbPath && this.saveLogs) logWriter.push({ date: Date.now(), msg: `${info.replace(reset, '').replace('\x1b[32m', '')}\n`, type: "info" }) // logWriter.write(`${info.replace(reset, '').replace('\x1b[32m', '')}\n`)
             }
         }
 
         console.error = (msg) => {
             const err = `[${this.formatDate()}]\x1b[31m ERROR${reset} (${process.pid}) ${this.formatMsg(msg)}`
             logger.log(err)
-            if(this.Context.getStore()) {
-                const logWriter = this.Context.getStore()
-                if(logWriter && Yon.dbPath && Yon.saveLogs) logWriter.push({ date: Date.now(), msg: `${err.replace(reset, '').replace('\x1b[31m', '')}\n`, type: "error" })
+            if(this.context.getStore()) {
+                const logWriter = this.context.getStore()
+                if(logWriter && this.dbPath && this.saveLogs) logWriter.push({ date: Date.now(), msg: `${err.replace(reset, '').replace('\x1b[31m', '')}\n`, type: "error" })
             }
         }
 
         console.debug = (msg) => {
             const bug = `[${this.formatDate()}]\x1b[36m DEBUG${reset} (${process.pid}) ${this.formatMsg(msg)}`
             logger.log(bug)
-            if(this.Context.getStore()) {
-                const logWriter = this.Context.getStore()
-                if(logWriter && Yon.dbPath && Yon.saveLogs) logWriter.push({ date: Date.now(), msg: `${bug.replace(reset, '').replace('\x1b[36m', '')}\n`, type: "debug" })
+            if(this.context.getStore()) {
+                const logWriter = this.context.getStore()
+                if(logWriter && this.dbPath && this.saveLogs) logWriter.push({ date: Date.now(), msg: `${bug.replace(reset, '').replace('\x1b[36m', '')}\n`, type: "debug" })
             }
         }
 
         console.warn = (msg) => {
             const warn = `[${this.formatDate()}]\x1b[33m WARN${reset} (${process.pid}) ${this.formatMsg(msg)}`
             logger.log(warn)
-            if(this.Context.getStore()) {
-                const logWriter = this.Context.getStore()
-                if(logWriter && Yon.dbPath && Yon.saveLogs) logWriter.push({ date: Date.now(), msg: `${warn.replace(reset, '').replace('\x1b[33m', '')}\n`, type: "warn" })
+            if(this.context.getStore()) {
+                const logWriter = this.context.getStore()
+                if(logWriter && this.dbPath && this.saveLogs) logWriter.push({ date: Date.now(), msg: `${warn.replace(reset, '').replace('\x1b[33m', '')}\n`, type: "warn" })
             }
         }
 
         console.trace = (msg) => {
             const trace = `[${this.formatDate()}]\x1b[35m TRACE${reset} (${process.pid}) ${this.formatMsg(msg)}`
             logger.log(trace)
-            if(this.Context.getStore()) {
-                const logWriter = this.Context.getStore()
-                if(logWriter && Yon.dbPath && Yon.saveLogs) logWriter.push({ date: Date.now(), msg: `${trace.replace(reset, '').replace('\x1b[35m', '')}\n`, type: "trace" })
+            if(this.context.getStore()) {
+                const logWriter = this.context.getStore()
+                if(logWriter && this.dbPath && this.saveLogs) logWriter.push({ date: Date.now(), msg: `${trace.replace(reset, '').replace('\x1b[35m', '')}\n`, type: "trace" })
             }
         }
-    }
+    },
 
-    private static async logRequest(request: Request, status: number, context: _HTTPContext, data: any = null) {
+    async logRequest(request: Request, status: number, context: _HTTPContext, data: any = null) {
 
-        if(Yon.dbPath && Yon.saveRequests) {
+        if(this.dbPath && this.saveRequests) {
 
             const url = new URL(request.url)
             const date = Date.now()
             const duration = date - (context.requestTime ?? 0)
 
-            await Silo.putData(Yon.requestTableName, { ipAddress: context.ipAddress, url: `${url.pathname}${url.search}`, method: request.method, status, duration, date, size: data ? String(data).length : 0, data })
+            await Silo.putData(this.requestTableName, { url: `${url.pathname}${url.search}`, method: request.method, status, duration, date, size: data ? String(data).length : 0, data })
         }
-    }
+    },
 
-    private static async processRequest(request: Request, context: _HTTPContext) {
+    async processRequest(request: Request, context: _HTTPContext) {
 
         const { handler, params, slugs } = this.getHandler(request)
 
@@ -347,17 +347,17 @@ export default class Yon {
 
             return res
         }
-    }
+    },
 
-    private static isAsyncIterator(data: any) {
+    isAsyncIterator(data: any) {
         return typeof data === "object" && Object.hasOwn(data, Symbol.asyncIterator)
-    }
+    },
 
-    private static hasFunctions(data: any) {
+    hasFunctions(data: any) {
         return typeof data === "object" && (Object.keys(data).some((elem) => typeof elem === "function") || Object.values(data).some((elem) => typeof elem === "function"))
-    }
+    },
 
-    private static processResponse(status: number, data?: any) {
+    processResponse(status: number, data?: any) {
 
         const headers = this.headers
 
@@ -374,22 +374,22 @@ export default class Yon {
         if(typeof data === "number" || typeof data === "boolean") return Response.json(data, { status, headers })
     
         return new Response(data, { status, headers })
-    }
+    },
 
-    private static async logError(e: Error, ipAddress: string, url: URL, method: string, logs: _log[], startTime?: number) {
+    async logError(e: Error, url: URL, method: string, logs: _log[], startTime?: number) {
 
         const path = url.pathname
 
         if(logs.length > 0) await Promise.all(logs.map(log => { 
-                                return Silo.putData(Yon.logsTableName, { ipAddress, path, method, ...log })
+                                return Silo.putData(this.logsTableName, { path, method, ...log })
                             }))
 
-        if(Yon.dbPath && Yon.saveErrors) await Silo.putData(Yon.errorsTableName, { ...generateHeapSnapshot(), date: Date.now(), ipAddress, path, method, error: e.message })
+        if(this.dbPath && this.saveErrors) await Silo.putData(this.errorsTableName, { date: Date.now(),path, method, error: e.message })
 
         console.error(`"${method} ${path}" ${e.cause as number ?? 500} ${startTime ? `- ${Date.now() - startTime}ms` : ''} - ${e.message.length} byte(s)`)
-    }
+    },
 
-    private static watchFiles() {
+    watchFiles() {
         
         if(this.inDevelopment) {
 
@@ -398,51 +398,33 @@ export default class Yon {
                 if(!filename?.split('/').some((path) => path.startsWith('_'))) await this.validateRoutes(filename!)
             })
         }
-    }
+    },
 
-    static async serve() {
+    async fetch(req: Request) {
 
-        const start = Date.now()
+        const request = req.clone()
 
-        await this.validateRoutes()
+        const logs: _log[] = []
 
-        this.watchFiles()
-
-        this.configLogger()
-
-        let request: Request;
-
-        let ipAddress: string;
-
-        let logs: _log[] = [];
-
-        let startTime: number;
-
-        const server = Bun.serve({ async fetch(req: Request) {
-
-            request = req.clone()
-
-            logs = []
-
-            ipAddress = server.requestIP(req)!.address
-
-            const url = new URL(req.url)
-            
-            startTime = Date.now()
-
-            return await Yon.Context.run(logs, async () => {
-
-                let res: Response;
-                
-                const data = await Yon.processRequest(req, { request: req, requestTime: startTime, ipAddress, logs, slugs: new Map<string, any>() })
+        const url = new URL(req.url)
         
-                res = Yon.processResponse(200, data)
+        const startTime = Date.now()
+
+        return await this.context.run(logs, async () => {
+
+            let res: Response
+
+            try {
+
+                const data = await this.processRequest(req, { request: req, requestTime: startTime, logs, slugs: new Map<string, any>() })
+    
+                res = this.processResponse(200, data)
 
                 if(logs.length > 0) await Promise.all(logs.map(log => { 
-                                        return Silo.putData(Yon.logsTableName, { ipAddress, path: url.pathname, method: req.method, ...log })
+                                        return Silo.putData(this.logsTableName, { path: url.pathname, method: req.method, ...log })
                                     }))
             
-                if(!Yon.isAsyncIterator(data)) {
+                if(!this.isAsyncIterator(data)) {
 
                     const status = res.status
                     const response_size = typeof data !== "undefined" ? String(data).length : 0
@@ -453,33 +435,25 @@ export default class Yon {
                     
                     console.info(`"${method} ${url.pathname}" ${status} - ${duration}ms - ${response_size} byte(s)`)
                 
-                    if(Yon.dbPath && Yon.saveStats) await Silo.putData(Yon.statsTableName, { cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
+                    if(this.dbPath && this.saveStats) await Silo.putData(this.statsTableName, { cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
                 }
-                
-                return res
-            })
-        
-        }, async error(req) {
 
-            const url = new URL(request.url)
-            const method = request.method
+            } catch(e) {
 
-            await Yon.logError(req, ipAddress, url, method, logs, startTime)
+                const method = request.method
 
-            if(Yon.dbPath && Yon.saveStats) await Silo.putData(Yon.statsTableName, { cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
+                await this.logError(e as Error, url, method, logs, startTime)
 
-            return Response.json({ detail: req.message }, { status: req.cause as number ?? 500, headers: Yon.headers })
-        }, 
-            development: this.inDevelopment,
-            port: process.env.PORT || 8000 
+                if(this.dbPath && this.saveStats) await Silo.putData(this.statsTableName, { cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
+
+                res = Response.json({ detail: (e as Error).message }, { status: (e as Error).cause as number ?? 500, headers: this.headers })
+            }
+            
+            return res
         })
+    },
 
-        process.on('SIGINT', () => process.exit(0))
-
-        console.info(`Live Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit) - StartUp Time: ${Date.now() - start}ms`)
-    }
-
-    private static async validateRoutes(route?: string) {
+    async validateRoutes(route?: string) {
 
         const staticPaths: string[] = []
 
@@ -510,7 +484,7 @@ export default class Yon {
     
             staticPaths.push(staticPath)
 
-            const module = await import(`${process.cwd()}/routes/${route}`)
+            const module = await import(`${process.cwd()}/${this.routesPath}/${route}`)
 
             const controller = (new module.default() as any).constructor
 
@@ -531,16 +505,14 @@ export default class Yon {
 
         if(route) return await validateRoute(route)
 
-        const files = Array.from(new Glob(`**/*.{ts,js}`).scanSync({ cwd: './routes' }))
+        const files = Array.from(new Glob(`**/*.{ts,js}`).scanSync({ cwd: this.routesPath }))
 
         const routes = files.filter((route) => !route.split('/').some((path) => path.startsWith('_')))
 
         for(const route of routes) await validateRoute(route)
+    },
 
-        if(this.hashDestination) this.hashRoutes()
-    }
-
-    private static parseParams(input: string[]) {
+    parseParams(input: string[]) {
 
         const params: (string | boolean | number | null)[] = []
 
@@ -560,9 +532,9 @@ export default class Yon {
         }
 
         return params
-    }
+    },
 
-    private static parseKVParams(input: URLSearchParams | FormData) {
+    parseKVParams(input: URLSearchParams | FormData) {
 
         const params: Record<string, any> = {}
 
@@ -595,19 +567,5 @@ export default class Yon {
         }
 
         return params
-    }
-    
-    private static async hashRoutes() {
-
-        const hashedRoutes: Record<string, string> = {}
-
-        for(const [route] of this.indexedRoutes) {
-            
-            const file = await Bun.file(`${process.cwd()}/routes/${route}`).text()
-
-            hashedRoutes[route] = Bun.hash(file).toString()
-        }
-
-        await Bun.write(`${process.cwd()}/${this.hashDestination}`, JSON.stringify(hashedRoutes, null, 2))
     }
 }
