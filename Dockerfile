@@ -1,4 +1,4 @@
-FROM oven/bun:latest AS builder
+FROM oven/bun:latest AS build
 
 RUN apt-get update && apt-get install -y unzip git
 
@@ -24,12 +24,18 @@ RUN bun build --target=bun Tach.ts --outfile lambda
 
 FROM public.ecr.aws/lambda/provided:al2
 
-COPY --from=builder /tmp/lambda ${LAMBDA_TASK_ROOT}
+COPY --from=build /tmp/lambda ${LAMBDA_TASK_ROOT}
 
-COPY --from=builder /tmp/bootstrap ${LAMBDA_RUNTIME_DIR}
+COPY --from=build /tmp/bootstrap ${LAMBDA_RUNTIME_DIR}
 
-COPY --from=builder /tmp/bun /opt
+COPY --from=build /tmp/bun /opt
 
-COPY --from=builder /tmp/runtime.ts /opt
+COPY ./src/runtime.ts /opt
+
+RUN chmod 777 /opt/bun
+
+RUN chmod 777 ${LAMBDA_TASK_ROOT}/lambda
+
+RUN chmod 777 ${LAMBDA_RUNTIME_DIR}/bootstrap
 
 CMD ["lambda.fetch"]

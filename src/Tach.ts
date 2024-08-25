@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { existsSync, watch } from "node:fs";
+import { watch } from "node:fs";
+import { exists } from "node:fs/promises";
 import Silo from "@delma/byos";
 import { Glob, Server } from "bun";
 
@@ -11,9 +12,7 @@ const Tach = {
 
     allMethods: process.env.ALLOW_METHODS ? process.env.ALLOW_METHODS.split(',') : ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
 
-    hasMiddleware: existsSync(`${process.env.ROUTES_PATH || './routes'}/_middleware.ts`),
-
-    inDevelopment: process.env.DEVELOPMENT === 'true',
+    inDevelopment: process.env.PRODUCTION ? false : true,
 
     headers: {
         "Access-Control-Allow-Headers": process.env.ALLOW_HEADERS || "",
@@ -24,7 +23,7 @@ const Tach = {
         "Access-Control-Allow-Methods": process.env.ALLOW_METHODS || ""
     },
 
-    dbPath: process.env.DB_DIR || './db',
+    dbPath: process.env.DB_DIR,
 
     saveStats: process.env.SAVE_STATS === 'true',
     saveRequests: process.env.SAVE_REQUESTS === 'true',
@@ -38,18 +37,20 @@ const Tach = {
 
     context: new AsyncLocalStorage<_log[]>(),
 
-    routesPath: process.env.ROUTES_PATH || './routes',
+    routesPath: process.env.LAMBDA_TASK_ROOT ? `${process.env.LAMBDA_TASK_ROOT}/routes` : `${process.cwd()}/routes`,
+
+    hasMiddleware: await exists(`${process.env.LAMBDA_TASK_ROOT || process.cwd()}/routes/_middleware.ts`) || await exists(`${process.env.LAMBDA_TASK_ROOT || process.cwd()}/routes/_middleware.js`) ,
 
     pathsMatch(routeSegs: string[], pathSegs: string[]) {
 
         if (routeSegs.length !== pathSegs.length) {
             return false;
         }
-    
-        const slugs = Tach.routeSlugs.get(`${routeSegs.join('/')}.ts`) ?? new Map<string, number>()
+
+        const slugs = Tach.routeSlugs.get(`${routeSegs.join('/')}.ts`) || Tach.routeSlugs.get(`${routeSegs.join('/')}.js`) || new Map<string, number>()
     
         for (let i = 0; i < routeSegs.length; i++) {
-            if (!slugs.has(routeSegs[i]) && routeSegs[i].replace('.ts', '') !== pathSegs[i]) {
+            if (!slugs.has(routeSegs[i]) && routeSegs[i].replace('.ts', '').replace('.js', '') !== pathSegs[i]) {
                 return false;
             }
         }
@@ -72,7 +73,7 @@ const Tach = {
         let bestMatchLength = -1;
 
         for (const [routeKey] of Tach.indexedRoutes) {
-            const routeSegs = routeKey.split('/').map(seg => seg.replace('.ts', ''));
+            const routeSegs = routeKey.split('/').map(seg => seg.replace('.ts', '').replace('.js', ''));
             const isMatch = Tach.pathsMatch(routeSegs, paths.slice(0, routeSegs.length));
 
             if (isMatch && routeSegs.length > bestMatchLength) {
@@ -107,7 +108,7 @@ const Tach = {
         return new Date().toISOString().replace('T', ' ').replace('Z', '')
     },
 
-    formatMsg(msg: any) {
+    formatMsg(...msg: any[]) {
 
         if(msg instanceof Set) return "\n" + JSON.stringify(Array.from(msg), null, 2)
         
@@ -120,7 +121,6 @@ const Tach = {
         }
 
         else if(Array.isArray(msg) 
-            || msg instanceof Array 
             || (typeof msg === 'object' && !Array.isArray(msg))
             || (typeof msg === 'object' && msg !== null)) return "\n" + JSON.stringify(msg, null, 2) 
 
@@ -129,49 +129,60 @@ const Tach = {
 
     configLogger() {
 
-        const logger = console
+        const logger = console.log
+
+        function log(...args: any[]): void {
+
+            if (!args.length) {
+                return;
+            }
+
+            const messages = args.map(arg => Bun.inspect(arg).replace(/\n/g, "\r"));
+
+            logger(...messages);
+        }
 
         const reset = '\x1b[0m'
 
-        console.info = (msg) => {
-            const info = `[${Tach.formatDate()}]\x1b[32m INFO${reset} (${process.pid}) ${Tach.formatMsg(msg)}`
-            logger.log(info)
+        console.info = (...args: any[]) => {
+            const info = `[${Tach.formatDate()}]\x1b[32m INFO${reset} (${process.pid}) ${Tach.formatMsg(...args)}`
+            log(info)
             if(Tach.context.getStore()) {
                 const logWriter = Tach.context.getStore()
-                if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${info.replace(reset, '').replace('\x1b[32m', '')}\n`, type: "info" }) // logWriter.write(`${info.replace(reset, '').replace('\x1b[32m', '')}\n`)
+                if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${info.replace(reset, '').replace('\x1b[32m', '')}\n`, type: "info" })
             }
         }
 
-        console.error = (msg) => {
-            const err = `[${Tach.formatDate()}]\x1b[31m ERROR${reset} (${process.pid}) ${Tach.formatMsg(msg)}`
-            logger.log(err)
+        console.error = (...args: any[]) => {
+            const err = `[${Tach.formatDate()}]\x1b[31m ERROR${reset} (${process.pid}) ${Tach.formatMsg(...args)}`
+            log(err)
             if(Tach.context.getStore()) {
                 const logWriter = Tach.context.getStore()
                 if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${err.replace(reset, '').replace('\x1b[31m', '')}\n`, type: "error" })
             }
         }
 
-        console.debug = (msg) => {
-            const bug = `[${Tach.formatDate()}]\x1b[36m DEBUG${reset} (${process.pid}) ${Tach.formatMsg(msg)}`
-            logger.log(bug)
+        console.debug = (...args: any[]) => {
+            const bug = `[${Tach.formatDate()}]\x1b[36m DEBUG${reset} (${process.pid}) ${Tach.formatMsg(...args)}`
+            log(bug)
             if(Tach.context.getStore()) {
                 const logWriter = Tach.context.getStore()
                 if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${bug.replace(reset, '').replace('\x1b[36m', '')}\n`, type: "debug" })
             }
         }
 
-        console.warn = (msg) => {
-            const warn = `[${Tach.formatDate()}]\x1b[33m WARN${reset} (${process.pid}) ${Tach.formatMsg(msg)}`
-            logger.log(warn)
+        console.warn = (...args: any[]) => {
+            const warn = `[${Tach.formatDate()}]\x1b[33m WARN${reset} (${process.pid}) ${Tach.formatMsg(...args)}`
+            log(warn)
             if(Tach.context.getStore()) {
                 const logWriter = Tach.context.getStore()
                 if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${warn.replace(reset, '').replace('\x1b[33m', '')}\n`, type: "warn" })
             }
         }
 
-        console.trace = (msg) => {
-            const trace = `[${Tach.formatDate()}]\x1b[35m TRACE${reset} (${process.pid}) ${Tach.formatMsg(msg)}`
-            logger.log(trace)
+        console.trace = (...args: any[]) => {
+            const trace = `[${Tach.formatDate()}]\x1b[35m TRACE${reset} (${process.pid}) ${Tach.formatMsg(...args)}`
+            log(trace)
             if(Tach.context.getStore()) {
                 const logWriter = Tach.context.getStore()
                 if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${trace.replace(reset, '').replace('\x1b[35m', '')}\n`, type: "trace" })
@@ -219,13 +230,15 @@ const Tach = {
 
         if(searchParams.size > 0) queryParams = Tach.parseKVParams(searchParams)
 
+        const middlewarePath = await exists(`${Tach.routesPath}/_middleware.ts`) ? `${Tach.routesPath}/_middleware.ts` : `${Tach.routesPath}/_middleware.js`
+
         if(params.length > 0 && !queryParams && !data) {
 
             let res = undefined
 
             if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
+                const middleware = (await import(middlewarePath)).default
 
                 res = await middleware(async () => handler(...params, context))
             
@@ -241,7 +254,7 @@ const Tach = {
 
             if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
+                const middleware = (await import(middlewarePath)).default
 
                 res = await middleware(async () => handler(queryParams, context))
             
@@ -257,7 +270,7 @@ const Tach = {
 
             if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
+                const middleware = (await import(middlewarePath)).default
 
                 res = await middleware(async () => handler(data, context))
 
@@ -273,7 +286,7 @@ const Tach = {
 
             if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
+                const middleware = (await import(middlewarePath)).default
 
                 res = await middleware(async () => handler(...params, queryParams, context))
             
@@ -289,7 +302,7 @@ const Tach = {
 
             if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
+                const middleware = (await import(middlewarePath)).default
 
                 res = await middleware(async () => handler(...params, data, context))
             
@@ -305,7 +318,7 @@ const Tach = {
 
             if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
+                const middleware = (await import(middlewarePath)).default
 
                 res = await middleware(async () => handler(queryParams, data, context))
             
@@ -321,7 +334,7 @@ const Tach = {
 
             if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
+                const middleware = (await import(middlewarePath)).default
 
                 res = await middleware(async () => handler(...params, queryParams, data, context))
             
@@ -337,7 +350,7 @@ const Tach = {
 
             if(Tach.hasMiddleware) {
 
-                const middleware = (await import(`${Tach.routesPath}/_middleware.ts`)).default
+                const middleware = (await import(middlewarePath)).default
 
                 res = await middleware(async () => handler(context))
             
@@ -380,7 +393,7 @@ const Tach = {
 
         const path = url.pathname
 
-        if(logs.length > 0) await Promise.all(logs.map(log => { 
+        if(logs.length > 0 && Tach.saveLogs && Tach.dbPath) await Promise.all(logs.map(log => {
                                 return Silo.putData(Tach.logsTableName, { ipAddress, path, method, ...log })
                             }))
 
@@ -410,7 +423,7 @@ const Tach = {
         
         const startTime = Date.now()
 
-        const ipAddress = server.requestIP(req)!.address
+        const ipAddress = server.requestIP ? server.requestIP(req)!.address : '0.0.0.0'
 
         return await Tach.context.run(logs, async () => {
 
@@ -422,7 +435,7 @@ const Tach = {
     
                 res = Tach.processResponse(200, data)
 
-                if(logs.length > 0) await Promise.all(logs.map(log => { 
+                if(logs.length > 0 && Tach.saveLogs && Tach.dbPath) await Promise.all(logs.map(log => { 
                                         return Silo.putData(Tach.logsTableName, { ipAddress, path: url.pathname, method: req.method, ...log })
                                     }))
             
@@ -469,7 +482,7 @@ const Tach = {
 
             paths.forEach((path, idx) => {
 
-                if(pattern.test(path) && (idx % 2 === 0 || paths[idx].includes('.ts'))) {
+                if(pattern.test(path) && (idx % 2 === 0 || paths[idx].includes('.ts') || paths[idx].includes('.js'))) {
                     throw new Error(`Invalid route ${route}`)
                 }
 
@@ -478,7 +491,7 @@ const Tach = {
     
             const idx = paths.findIndex((path) => pattern.test(path))
     
-            if(idx > -1 && (idx % 2 === 0 || paths[idx].includes('.ts'))) throw new Error(`Invalid route ${route}`)
+            if(idx > -1 && (idx % 2 === 0 || paths[idx].includes('.ts') || paths[idx].includes('.js'))) throw new Error(`Invalid route ${route}`)
     
             const staticPath = paths.filter((path) => !pattern.test(path)).join(',')
     
@@ -486,7 +499,7 @@ const Tach = {
     
             staticPaths.push(staticPath)
 
-            const module = await import(`${process.cwd()}/${Tach.routesPath}/${route}`)
+            const module = await import(`${Tach.routesPath}/${route}`)
 
             const controller = (new module.default() as any).constructor
 
@@ -572,10 +585,16 @@ const Tach = {
     }
 }
 
-await Tach.validateRoutes()
+try {
 
-Tach.watchFiles()
+    await Tach.validateRoutes()
 
-Tach.configLogger()
+    Tach.watchFiles()
+    
+    Tach.configLogger()
+
+} catch(e) {
+    console.log(`Tach.ts error --> ${e}`)
+}
 
 export default Tach
