@@ -572,4 +572,10 @@ const Tach = {
     }
 }
 
+await Tach.validateRoutes()
+
+Tach.watchFiles()
+
+Tach.configLogger()
+
 export default Tach

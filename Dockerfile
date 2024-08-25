@@ -32,4 +32,4 @@ COPY --from=builder /tmp/bun /opt
 
 COPY --from=builder /tmp/runtime.ts /opt
 
-# CMD ["lambda.fetch"]
+CMD ["lambda.fetch"]

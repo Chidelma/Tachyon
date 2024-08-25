@@ -6,12 +6,6 @@ try {
 
     const start = Date.now()
 
-    await Tach.validateRoutes()
-
-    Tach.watchFiles()
-
-    Tach.configLogger()
-
     const server = Bun.serve({ fetch: Tach.fetch, async error(req) {
 
         if(Tach.dbPath && Tach.saveStats) await Silo.putData(Tach.statsTableName, { cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
