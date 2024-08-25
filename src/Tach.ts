@@ -529,7 +529,7 @@ const Tach = {
 
     parseParams(input: string[]) {
 
-        const params: (string | boolean | number | null)[] = []
+        const params: (string | boolean | number | null | undefined)[] = []
 
         for(const param of input) {
 
@@ -542,6 +542,8 @@ const Tach = {
             else if(param === 'false') params.push(false)
 
             else if(param === 'null') params.push(null)
+
+            else if(param === 'undefined') params.push(undefined)
 
             else params.push(param)
         }
