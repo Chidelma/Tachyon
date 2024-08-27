@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import Tach from "./Tach.js"
-import Silo from "@delma/byos";
+import Silo from "@vyckr/byos";
 
 try {
 

@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { watch } from "node:fs";
 import { exists } from "node:fs/promises";
-import Silo from "@delma/byos";
+import Silo from "@vyckr/byos";
 import { Glob, Server } from "bun";
 
 const Tach = {
@@ -596,7 +596,7 @@ try {
     Tach.configLogger()
 
 } catch(e) {
-    console.log(`Tach.ts error --> ${e}`)
+    console.log(`Tach.ts --> ${e}`)
 }
 
 export default Tach

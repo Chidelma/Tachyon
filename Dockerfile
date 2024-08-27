@@ -18,7 +18,9 @@ WORKDIR /tmp
 
 COPY ./src/Tach.ts .
 
-COPY ./node_modules ./node_modules
+COPY package.json .
+
+RUN bun install
 
 RUN bun build --target=bun Tach.ts --outfile lambda
 
