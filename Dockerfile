@@ -16,28 +16,32 @@ RUN unzip bun-lambda-layer.zip -d /tmp
 
 WORKDIR /tmp
 
-COPY ./src/Tach.ts .
-
 COPY package.json .
 
 RUN bun install
 
-RUN bun build --target=bun Tach.ts --outfile lambda
-
 FROM public.ecr.aws/lambda/provided:al2
 
-COPY --from=build /tmp/lambda ${LAMBDA_TASK_ROOT}
+COPY --from=build /tmp/node_modules ${LAMBDA_TASK_ROOT}/node_modules
+
+COPY --from=build /tmp/package.json ${LAMBDA_TASK_ROOT}/package.json
 
 COPY --from=build /tmp/bootstrap ${LAMBDA_RUNTIME_DIR}
 
 COPY --from=build /tmp/bun /opt
 
+COPY ./src/Tach.ts ${LAMBDA_TASK_ROOT}
+
+COPY ./tsconfig.json ${LAMBDA_TASK_ROOT}
+
 COPY ./src/runtime.ts /opt
 
 RUN chmod 777 /opt/bun
 
-RUN chmod 777 ${LAMBDA_TASK_ROOT}/lambda
+RUN chmod 777 /opt/runtime.ts
+
+RUN chmod 777 ${LAMBDA_TASK_ROOT}/Tach.ts
 
 RUN chmod 777 ${LAMBDA_RUNTIME_DIR}/bootstrap
 
-CMD ["lambda.fetch"]
+CMD ["Tach.fetch"]
