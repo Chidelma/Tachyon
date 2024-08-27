@@ -7,7 +7,7 @@ Tachyon is a simple to use API framework built with TypeScript (Bun), which was 
 - Has BYOS [(Bring Your Own Storage)](https://github.com/Chidelma/BYOS) integration
 - Use of decorators for routes
 - Customizable methods for routes
-- AWS Lambda support (Docker)
+- AWS Lambda support [(Docker)](https://hub.docker.com/repository/docker/iyormobi/tachyon/general)
 - Use of file-system based routing
 - Hot reloading of routes in development mode
 - Supports dynamic routes
