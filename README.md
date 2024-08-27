@@ -16,7 +16,7 @@ Tachyon is a simple to use API framework built with TypeScript (Bun), which was 
 ## Installation
 
 ```bash
-npm install @vyckr/tachyon
+bun add @vyckr/tachyon
 ```
 
 ## Configuration
