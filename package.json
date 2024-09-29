@@ -1,6 +1,6 @@
 {
   "name": "@vyckr/tachyon",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "devDependencies": {
     "@types/node": "^20.4.2",
     "bun-types": "^1.1.21"

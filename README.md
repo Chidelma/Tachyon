@@ -60,12 +60,12 @@ Make sure you have set the 'SCHEMA_PATH' if 'SCHEMA' is set to 'STRICT'. The sch
 ### Requirements
 - Make sure to have a 'routes' directory in the root of your project
 - Dynamic routes should be enclosed in square brackets
-- The first parameter should NOT be a dynamic route (e.g. /[version]/doc.ts)
-- All dynamic routes should be within odd indexes (e.g. /v1/[path]/login/[id]/name.ts)
-- The last parameter in the route should not be a dynamic route (e.g. /v1/[path]/login/[id]/name.ts)
+- The first parameter should NOT be a dynamic route (e.g. /[version]/doc/index.ts)
+- All dynamic routes should be within odd indexes (e.g. /v1/[path]/login/[id]/name/index.ts)
+- The last parameter in the route should not be a dynamic route (e.g. /v1/[path]/login/[id]/name/index.ts)
 
 ```typescript
-// routes/v1/[collection]/doc.ts
+// routes/v1/[collection]/doc/index.ts
 import Silo from "@vyckr/byos"
 imoprt { VALIDATE } from "../utils/decorators"
 

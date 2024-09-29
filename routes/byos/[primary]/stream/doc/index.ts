@@ -1,4 +1,4 @@
-import { VALIDATE } from "../../../_utils/validation.js";
+import { VALIDATE } from "../../../../utils/validation.js";
 
 export default class {
 
@@ -14,7 +14,7 @@ export default class {
         }
     }
 
-    @VALIDATE([{ type: "object", default: {} }, { type: "object" }])
+    @VALIDATE([{ type: "object" }])
     static DELETE({ request }: _HTTPContext) {
 
         return {
