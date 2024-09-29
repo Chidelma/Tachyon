@@ -39,7 +39,7 @@ const Tach = {
 
     routesPath: process.env.LAMBDA_TASK_ROOT ? `${process.env.LAMBDA_TASK_ROOT}/routes` : `${process.cwd()}/routes`,
 
-    hasMiddleware: await exists(`${process.env.LAMBDA_TASK_ROOT || process.cwd()}/routes/_middleware.ts`) || await exists(`${process.env.LAMBDA_TASK_ROOT || process.cwd()}/routes/_middleware.js`) ,
+    hasMiddleware: await exists(`${process.env.LAMBDA_TASK_ROOT || process.cwd()}/routes/middleware.ts`) || await exists(`${process.env.LAMBDA_TASK_ROOT || process.cwd()}/routes/middleware.js`) ,
 
     pathsMatch(routeSegs: string[], pathSegs: string[]) {
 
@@ -47,10 +47,10 @@ const Tach = {
             return false;
         }
 
-        const slugs = Tach.routeSlugs.get(`${routeSegs.join('/')}.ts`) || Tach.routeSlugs.get(`${routeSegs.join('/')}.js`) || new Map<string, number>()
+        const slugs = Tach.routeSlugs.get(`${routeSegs.join('/')}/index.ts`) || Tach.routeSlugs.get(`${routeSegs.join('/')}/index.js`) || new Map<string, number>()
     
         for (let i = 0; i < routeSegs.length; i++) {
-            if (!slugs.has(routeSegs[i]) && routeSegs[i].replace('.ts', '').replace('.js', '') !== pathSegs[i]) {
+            if (!slugs.has(routeSegs[i]) && routeSegs[i] !== pathSegs[i]) {
                 return false;
             }
         }
@@ -73,7 +73,11 @@ const Tach = {
         let bestMatchLength = -1;
 
         for (const [routeKey] of Tach.indexedRoutes) {
-            const routeSegs = routeKey.split('/').map(seg => seg.replace('.ts', '').replace('.js', ''));
+
+            const routeSegs = routeKey.split('/')
+
+            routeSegs.pop()
+            
             const isMatch = Tach.pathsMatch(routeSegs, paths.slice(0, routeSegs.length));
 
             if (isMatch && routeSegs.length > bestMatchLength) {
@@ -230,7 +234,7 @@ const Tach = {
 
         if(searchParams.size > 0) queryParams = Tach.parseKVParams(searchParams)
 
-        const middlewarePath = await exists(`${Tach.routesPath}/_middleware.ts`) ? `${Tach.routesPath}/_middleware.ts` : `${Tach.routesPath}/_middleware.js`
+        const middlewarePath = await exists(`${Tach.routesPath}/middleware.ts`) ? `${Tach.routesPath}/middleware.ts` : `${Tach.routesPath}/middleware.js`
 
         if(params.length > 0 && !queryParams && !data) {
 
@@ -480,18 +484,16 @@ const Tach = {
 
             const slugs = new Map<string, number>()
 
+            if(pattern.test(paths[0]) || pattern.test(paths[paths.length - 1])) throw new Error(`Invalid route ${route}`)
+
             paths.forEach((path, idx) => {
 
-                if(pattern.test(path) && (idx % 2 === 0 || paths[idx].includes('.ts') || paths[idx].includes('.js'))) {
+                if(pattern.test(path) && (pattern.test(paths[idx - 1]) || pattern.test(paths[idx + 1]))) {
                     throw new Error(`Invalid route ${route}`)
                 }
 
                 if(pattern.test(path)) slugs.set(path, idx)
             })
-    
-            const idx = paths.findIndex((path) => pattern.test(path))
-    
-            if(idx > -1 && (idx % 2 === 0 || paths[idx].includes('.ts') || paths[idx].includes('.js'))) throw new Error(`Invalid route ${route}`)
     
             const staticPath = paths.filter((path) => !pattern.test(path)).join(',')
     
@@ -520,10 +522,8 @@ const Tach = {
 
         if(route) return await validateRoute(route)
 
-        const files = Array.from(new Glob(`**/*.{ts,js}`).scanSync({ cwd: Tach.routesPath }))
-
-        const routes = files.filter((route) => !route.split('/').some((path) => path.startsWith('_')))
-
+        const routes = Array.from(new Glob(`**/*/index.{ts,js}`).scanSync({ cwd: Tach.routesPath }))
+        
         for(const route of routes) await validateRoute(route)
     },
 
